@@ -1,0 +1,21 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ChromaGLS", "ChromaGLS\ChromaGLS.csproj", "{25608A45-905B-42EB-A9FB-C296FC5DDC6F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug-1.40.8|Any CPU = Debug-1.40.8|Any CPU
+		Release-1.40.8|Any CPU = Release-1.40.8|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{25608A45-905B-42EB-A9FB-C296FC5DDC6F}.Debug-1.40.8|Any CPU.ActiveCfg = Debug-1.40.8|Any CPU
+		{25608A45-905B-42EB-A9FB-C296FC5DDC6F}.Debug-1.40.8|Any CPU.Build.0 = Debug-1.40.8|Any CPU
+		{25608A45-905B-42EB-A9FB-C296FC5DDC6F}.Release-1.40.8|Any CPU.ActiveCfg = Release-1.40.8|Any CPU
+		{25608A45-905B-42EB-A9FB-C296FC5DDC6F}.Release-1.40.8|Any CPU.Build.0 = Release-1.40.8|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
