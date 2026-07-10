@@ -12,6 +12,3 @@ dotnet_diagnostic.sa1413.severity = none
 dotnet_diagnostic.sa1313.severity = none
 dotnet_diagnostic.sa0001.severity = none
 dotnet_diagnostic.sa1010.severity = none
-# Lowercase members mirrored from game/CJD save-data types
-dotnet_diagnostic.sa1300.severity = none
-dotnet_diagnostic.sa1121.severity = none
