@@ -51,11 +51,11 @@ On a successful build the BSMT `CopyToPlugins` task copies `ChromaGLS.dll` to
 
 > **Note:** The Aeroluna GitHub Packages feed hosts the `BeatSaberModdingTools.Tasks.Luna` and
 > `LunaBSMod.Tasks` build packages (auth required even for public packages). The repo `NuGet.config`
-> uses the `AEROLUNA_PAT` environment variable for the feed password. Set it before building, or add
+> uses the `NUGET_AUTH_TOKEN` environment variable for the feed password. Set it before building, or add
 > the credentials to your user-level `NuGet.config` instead:
 >
 > ```powershell
-> $env:AEROLUNA_PAT = "ghp_..."
+> $env:NUGET_AUTH_TOKEN = "ghp_..."
 > # or permanently for the machine
-> [Environment]::SetEnvironmentVariable("AEROLUNA_PAT", "ghp_...", "User")
+> [Environment]::SetEnvironmentVariable("NUGET_AUTH_TOKEN", "ghp_...", "User")
 > ```
