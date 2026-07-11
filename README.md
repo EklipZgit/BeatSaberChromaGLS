@@ -36,6 +36,25 @@ mismatches assigning colors to the wrong nodes.
 - `BSIPA` `^4.2.2`
 - `CustomJSONData` `^2.6.3`
 
+## Prerequisites
+
+This project uses the **Aeroluna GitHub Packages** NuGet feed for the BeatSaberModdingTools build packages
+(`BeatSaberModdingTools.Tasks.Luna` and `LunaBSMod.Tasks`). GitHub Package Registry requires authentication
+even for public packages, so you must add the feed to your user-level `NuGet.config` before building.
+
+1. Create a GitHub Personal Access Token with the `read:packages` scope:
+   https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+2. Open a PowerShell window and run:
+   ```powershell
+   dotnet nuget add source "https://nuget.pkg.github.com/Aeroluna/index.json" `
+       --name "Aeroluna Github Packages" `
+       --username EklipZ `
+       --password "ghp_..." `
+       --store-password-in-clear-text
+   ```
+   Replace `ghp_...` with your token. If you prefer to keep the token in an environment variable, set
+   `$env:NUGET_AUTH_TOKEN` first and pass `--password $env:NUGET_AUTH_TOKEN` instead.
+
 ## Building
 
 BeatSaberChromaGLS follows the exact same build pattern as Heck and ChroMapper: game DLLs are referenced from
@@ -48,14 +67,3 @@ dotnet build BeatSaberChromaGLS\ChromaGLS.sln -c Debug-1.40.8 -p:BeatSaberDir="C
 
 On a successful build the BSMT `CopyToPlugins` task copies `ChromaGLS.dll` to
 `$(BeatSaberDir)\Plugins`.
-
-> **Note:** The Aeroluna GitHub Packages feed hosts the `BeatSaberModdingTools.Tasks.Luna` and
-> `LunaBSMod.Tasks` build packages (auth required even for public packages). The repo `NuGet.config`
-> uses the `NUGET_AUTH_TOKEN` environment variable for the feed password. Set it before building, or add
-> the credentials to your user-level `NuGet.config` instead:
->
-> ```powershell
-> $env:NUGET_AUTH_TOKEN = "ghp_..."
-> # or permanently for the machine
-> [Environment]::SetEnvironmentVariable("NUGET_AUTH_TOKEN", "ghp_...", "User")
-> ```
