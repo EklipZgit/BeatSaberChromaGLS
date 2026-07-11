@@ -38,17 +38,24 @@ mismatches assigning colors to the wrong nodes.
 
 ## Building
 
-ChromaGLS follows the exact same build pattern as Heck and ChroMapper: game DLLs are referenced from
+BeatSaberChromaGLS follows the exact same build pattern as Heck and ChroMapper: game DLLs are referenced from
 `$(BeatSaberDir)`, and the manifest + Plugins copy are produced by the BeatSaberModdingTools (Luna)
 MSBuild tasks. Anyone set up to build Heck can build this.
 
 ```powershell
-dotnet build ChromaGLS.sln -c Debug-1.40.8 -p:BeatSaberDir="C:\Users\tdrak\BSManager\BSInstances\1.40.8"
+dotnet build BeatSaberChromaGLS\ChromaGLS.sln -c Debug-1.40.8 -p:BeatSaberDir="C:\Users\tdrak\BSManager\BSInstances\1.40.8"
 ```
 
 On a successful build the BSMT `CopyToPlugins` task copies `ChromaGLS.dll` to
 `$(BeatSaberDir)\Plugins`.
 
-> **Note:** `NuGet.config` contains the credential for Aeroluna's GitHub Packages feed, which hosts
-> the `BeatSaberModdingTools.Tasks.Luna` and `LunaBSMod.Tasks` build packages (auth required even for
-> public packages).
+> **Note:** The Aeroluna GitHub Packages feed hosts the `BeatSaberModdingTools.Tasks.Luna` and
+> `LunaBSMod.Tasks` build packages (auth required even for public packages). The repo `NuGet.config`
+> uses the `AEROLUNA_PAT` environment variable for the feed password. Set it before building, or add
+> the credentials to your user-level `NuGet.config` instead:
+>
+> ```powershell
+> $env:AEROLUNA_PAT = "ghp_..."
+> # or permanently for the machine
+> [Environment]::SetEnvironmentVariable("AEROLUNA_PAT", "ghp_...", "User")
+> ```
