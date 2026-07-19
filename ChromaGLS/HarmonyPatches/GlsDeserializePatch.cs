@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Generic;
+using System.Reflection;
 using CustomJSONData;
 using CustomJSONData.CustomBeatmap;
 using HarmonyLib;
 using Newtonsoft.Json;
+#if !PRE_V1_37_1
 using _DistributionParamType = BeatmapSaveDataCommon.DistributionParamType;
 using _EaseType = BeatmapSaveDataCommon.EaseType;
 using _EnvironmentColorType = BeatmapSaveDataCommon.EnvironmentColorType;
@@ -11,6 +14,19 @@ using _LightColorBaseData = BeatmapSaveDataVersion3.LightColorBaseData;
 using _LightColorEventBox = BeatmapSaveDataVersion3.LightColorEventBox;
 using _LightColorEventBoxGroup = BeatmapSaveDataVersion3.LightColorEventBoxGroup;
 using _TransitionType = BeatmapSaveDataVersion3.TransitionType;
+#else
+using _DistributionParamType = BeatmapSaveDataVersion3.BeatmapSaveData.EventBox.DistributionParamType;
+using _EaseType = BeatmapSaveDataVersion3.BeatmapSaveData.EaseType;
+using _EnvironmentColorType = BeatmapSaveDataVersion3.BeatmapSaveData.EnvironmentColorType;
+using _IndexFilter = BeatmapSaveDataVersion3.BeatmapSaveData.IndexFilter;
+using _LightColorBaseData = BeatmapSaveDataVersion3.BeatmapSaveData.LightColorBaseData;
+using _LightColorEventBox = BeatmapSaveDataVersion3.BeatmapSaveData.LightColorEventBox;
+using _LightColorEventBoxGroup = BeatmapSaveDataVersion3.BeatmapSaveData.LightColorEventBoxGroup;
+using _TransitionType = BeatmapSaveDataVersion3.BeatmapSaveData.TransitionType;
+#endif
+#if !PRE_V1_37_1
+using _SaveData = CustomJSONData.CustomBeatmap.Version3CustomBeatmapSaveData;
+#endif
 
 namespace ChromaGLS.HarmonyPatches
 {
@@ -31,9 +47,28 @@ namespace ChromaGLS.HarmonyPatches
     //   "b" = beat, "g" = groupId, "e" = eventBoxes, "f" = indexFilter,
     //   "w" = beatDistributionParam, "d" = beatDistributionParamType,
     //   "c" = colorType, "customData" = customData.
-    [HarmonyPatch(typeof(Version3CustomBeatmapSaveData), nameof(Version3CustomBeatmapSaveData.DeserializeLightColorEventBoxGroupArray))]
+#if PRE_V1_37_1
+    [HarmonyPatch("CustomJSONData.CustomBeatmap.CustomBeatmapSaveData", "DeserializeLightColorEventBoxGroupArray")]
+#else
+    [HarmonyPatch(typeof(_SaveData), nameof(_SaveData.DeserializeLightColorEventBoxGroupArray))]
+#endif
     internal static class GlsDeserializePatch
     {
+        private static _IndexFilter? DeserializeIndexFilter(JsonReader reader)
+        {
+#if PRE_V1_37_1
+            Type? saveDataType = AccessTools.TypeByName("CustomJSONData.CustomBeatmap.CustomBeatmapSaveData")
+                ?? AccessTools.TypeByName("CustomJSONData.CustomBeatmap.Custom2_6_0AndEarlierBeatmapSaveData");
+            MethodInfo? method = saveDataType?.GetMethod(
+                "DeserializeIndexFilter",
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            object? result = method?.Invoke(null, new object[] { reader });
+            return result is _IndexFilter filter ? filter : null;
+#else
+            return _SaveData.DeserializeIndexFilter(reader);
+#endif
+        }
+
         [HarmonyPrefix]
         private static bool Prefix(JsonReader reader, List<_LightColorEventBoxGroup> list)
         {
@@ -71,7 +106,7 @@ namespace ChromaGLS.HarmonyPatches
                                     switch (eventName)
                                     {
                                         case "f":
-                                            indexFilter = Version3CustomBeatmapSaveData.DeserializeIndexFilter(reader);
+                                            indexFilter = DeserializeIndexFilter(reader);
                                             break;
 
                                         case "w":
@@ -153,8 +188,7 @@ namespace ChromaGLS.HarmonyPatches
                                                             break;
 
                                                         case "sf":
-                                                            strobeFade = reader.ReadIntAsBoolean() ??
-                                                                         strobeFade;
+                                                            strobeFade = reader.ReadIntAsBoolean() ?? strobeFade;
                                                             break;
 
                                                         case "customData":
@@ -165,15 +199,24 @@ namespace ChromaGLS.HarmonyPatches
                                                             reader.Skip();
                                                             break;
                                                     }
-                                                }).Finish(() => lightColorBaseDataList.Add(new LightColorBaseDataSaveData(
-                                                    lightBeat,
-                                                    transitionType,
-                                                    colorType,
-                                                    brightness,
-                                                    strobeFrequency,
-                                                    strobeBrightness,
-                                                    strobeFade,
-                                                    lightData)));
+                                                }).Finish(() =>
+                                                {
+#if V1_29_1
+                                                    lightData["__chromaGLS_strobeBrightness"] = strobeBrightness;
+                                                    lightData["__chromaGLS_strobeFade"] = strobeFade;
+#endif
+                                                    lightColorBaseDataList.Add(new LightColorBaseDataSaveData(
+                                                        lightBeat,
+                                                        transitionType,
+                                                        colorType,
+                                                        brightness,
+                                                        strobeFrequency,
+#if !V1_29_1
+                                                        strobeBrightness,
+                                                        strobeFade,
+#endif
+                                                        lightData));
+                                                });
                                             });
                                             break;
 
@@ -201,7 +244,7 @@ namespace ChromaGLS.HarmonyPatches
                             reader.Skip();
                             break;
                     }
-                }).Finish(() => list.Add(new Version3CustomBeatmapSaveData.LightColorEventBoxGroupSaveData(beat, groupId, eventBoxes, data)));
+                }).Finish(() => list.Add(new _LightColorEventBoxGroup(beat, groupId, eventBoxes)));
             });
 
             return false;

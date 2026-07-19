@@ -27,16 +27,17 @@
 #>
 param(
     [ValidateSet("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1")]
-    [string]$Version,
+    [string]$Version = $null,
 
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Debug"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $SupportedVersions = @("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1")
+# $SupportedVersions = @("1.29.1", "1.40.8")
 $SlnFile = Join-Path $PSScriptRoot "ChromaGLS.sln"
 
 function Get-BeatSaberEnvVarName {

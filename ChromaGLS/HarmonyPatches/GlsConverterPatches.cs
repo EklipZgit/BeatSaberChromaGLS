@@ -1,7 +1,19 @@
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using CustomJSONData.CustomBeatmap;
 using HarmonyLib;
+#if !PRE_V1_37_1
+using _LightColorBaseData = BeatmapSaveDataVersion3.LightColorBaseData;
+using _LightColorEventBox = BeatmapSaveDataVersion3.LightColorEventBox;
+using _LightColorEventBoxConverter = BeatmapDataLoaderVersion3.BeatmapDataLoader.LightColorEventBoxConverter;
+#else
+using _LightColorBaseData = BeatmapSaveDataVersion3.BeatmapSaveData.LightColorBaseData;
+using _LightColorEventBox = BeatmapSaveDataVersion3.BeatmapSaveData.LightColorEventBox;
+using _LightColorEventBoxConverter = BeatmapDataLoader.LightColorEventBoxConvertor;
+#endif
 
 namespace ChromaGLS.HarmonyPatches
 {
@@ -29,12 +41,33 @@ namespace ChromaGLS.HarmonyPatches
         private static readonly ConditionalWeakTable<LightColorBeatmapEventDataBox, List<CustomData?>> _boxCustomData
             = new();
 
-        [HarmonyPostfix]
-        [HarmonyPatch(
-            typeof(BeatmapDataLoaderVersion3.BeatmapDataLoader.LightColorEventBoxConverter),
-            "Convert")]
+        private static readonly ConditionalWeakTable<BeatmapEventData, LightColorBeatmapEventDataBox> _eventOrigins
+            = new();
+
+        // Bounded diagnostics identify custom-data ownership before changing the 1.29.1 mapping again.
+        private static int ConverterDiagnosticCount;
+
+        internal static bool TryGetEventOrigin(
+            BeatmapEventData eventData,
+            out LightColorBeatmapEventDataBox origin)
+        {
+            return _eventOrigins.TryGetValue(eventData, out origin);
+        }
+
+        // Unpack skips base nodes whose calculated beat is at or beyond maxBeat on every supported version.
+        // The emitted-node predicate must be shared with the custom-data mapping or indices drift into later boxes.
+        private static readonly FieldInfo BaseDataListField =
+            typeof(LightColorBeatmapEventDataBox).GetField("_lightColorBaseDataList", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        private static readonly FieldInfo BeatStepField =
+            typeof(LightColorBeatmapEventDataBox).GetField("_beatStep", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        private static readonly FieldInfo BaseDataBeatField =
+            BaseDataListField.FieldType.GetGenericArguments()[0].GetField("beat", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        // Target the protected LightColorEventBox converter overload explicitly; the base converter also exposes Convert.
         private static void LightColorEventBoxConverterPostfix(
-            BeatmapSaveDataVersion3.LightColorEventBox saveData,
+            _LightColorEventBox saveData,
             BeatmapEventDataBox __result)
         {
             if (__result is not LightColorBeatmapEventDataBox box)
@@ -44,10 +77,11 @@ namespace ChromaGLS.HarmonyPatches
 
             List<CustomData?> perEventData = new();
             bool anyCustom = false;
-            foreach (BeatmapSaveDataVersion3.LightColorBaseData item in saveData.lightColorBaseDataList ?? new List<BeatmapSaveDataVersion3.LightColorBaseData>())
+            foreach (_LightColorBaseData item in saveData.lightColorBaseDataList ?? new List<_LightColorBaseData>())
             {
                 if (item is ICustomData cd && cd.customData.Count > 0)
                 {
+                    // Preserve legacy strobe metadata on OEM events; ResolveCustomColor separately requires explicit GLS color keys.
                     perEventData.Add(cd.customData);
                     anyCustom = true;
                 }
@@ -61,23 +95,71 @@ namespace ChromaGLS.HarmonyPatches
             {
                 _boxCustomData.Add(box, perEventData);
             }
+
+#if V1_29_1
+            if (ConverterDiagnosticCount++ < 80)
+            {
+                string customFlags = string.Join(",", perEventData.Select(data => data == null ? "0" : "1"));
+                string beats = string.Join(",", saveData.lightColorBaseDataList.Select(data => data.beat.ToString("F3")));
+                Plugin.Log.Info($"[ChromaGLS] 1.29 Convert box={box.GetHashCode()} count={perEventData.Count} anyCustom={anyCustom} flags={customFlags} beats={beats}");
+            }
+#endif
         }
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(LightColorBeatmapEventDataBox), "Unpack")]
+#if PRE_V1_42_1
         private static void LightColorBeatmapEventDataBoxUnpackPostfix(
             LightColorBeatmapEventDataBox __instance,
+            float groupBoxBeat,
+            int durationOrderIndex,
+            float maxBeat,
             List<BeatmapEventData> output)
+#else
+        private static void LightColorBeatmapEventDataBoxUnpackPostfix(
+            LightColorBeatmapEventDataBox __instance,
+            float groupBoxBeat,
+            int durationOrderIndex,
+            float maxBeat,
+            ref IEnumerable<BeatmapEventData> __result)
+#endif
         {
             if (!_boxCustomData.TryGetValue(__instance, out List<CustomData?> perEventData))
             {
                 return;
             }
 
-            // output may contain events from multiple boxes (appended); scan from the end
-            // matching the count of items we know this box produced.
-            int boxCount = perEventData!.Count;
-            int outputStart = output.Count - boxCount;
+            // Reproduce the game's predicate so custom data follows emitted nodes rather than raw node indices.
+            IList baseData = (IList)BaseDataListField.GetValue(__instance);
+            float beatStep = (float)BeatStepField.GetValue(__instance);
+            List<CustomData?> emittedCustomData = new();
+            for (int i = 0; i < baseData.Count; i++)
+            {
+                object baseDataItem = baseData[i];
+                float baseBeat = (float)BaseDataBeatField.GetValue(baseDataItem);
+                float beat = groupBoxBeat + baseBeat + (durationOrderIndex * beatStep);
+                if (beat < maxBeat)
+                {
+                    emittedCustomData.Add(perEventData![i]);
+                }
+            }
+
+            perEventData = emittedCustomData;
+            int boxCount = perEventData.Count;
+#if PRE_V1_42_1
+            List<BeatmapEventData> outputList = output;
+#else
+            List<BeatmapEventData> outputList = __result?.ToList() ?? new List<BeatmapEventData>();
+            __result = outputList;
+#endif
+#if V1_29_1
+            if (ConverterDiagnosticCount++ < 160)
+            {
+                string customFlags = string.Join(",", perEventData.Select(data => data == null ? "0" : "1"));
+                Plugin.Log.Info($"[ChromaGLS] 1.29 Unpack box={__instance.GetHashCode()} groupBeat={groupBoxBeat:F3} maxBeat={maxBeat:F3} duration={durationOrderIndex} outputBefore={outputList.Count - boxCount} emitted={boxCount} flags={customFlags}");
+            }
+#endif
+            int outputStart = outputList.Count - boxCount;
             if (outputStart < 0)
             {
                 return;
@@ -92,23 +174,51 @@ namespace ChromaGLS.HarmonyPatches
                 }
 
                 int outIdx = outputStart + i;
-                if (output[outIdx] is not LightColorBeatmapEventData ev || ev is CustomLightColorBeatmapEventData)
+                if (outputList[outIdx] is not LightColorBeatmapEventData ev || ev is CustomLightColorBeatmapEventData)
                 {
                     continue;
                 }
 
-                output[outIdx] = new CustomLightColorBeatmapEventData(
+                CustomLightColorBeatmapEventData customEvent = new(
                     ev.time,
                     ev.groupId,
                     ev.elementId,
+#if PRE_V1_37_1
+                    ev.transitionType,
+#else
                     ev.usePreviousValue,
                     ev.easeType,
+#endif
                     ev.colorType,
                     ev.brightness,
                     ev.strobeBeatFrequency,
+#if !V1_29_1
                     ev.strobeBrightness,
                     ev.strobeFade,
+#endif
                     customData);
+                outputList[outIdx] = customEvent;
+                _eventOrigins.Add(customEvent, __instance);
+            }
+        }
+        [HarmonyPatch]
+        private static class LightColorEventBoxConverterPatch
+        {
+            [HarmonyTargetMethod]
+            private static MethodBase TargetMethod()
+            {
+                return AccessTools.GetDeclaredMethods(typeof(_LightColorEventBoxConverter))
+                    .Single(method => method.Name == "Convert"
+                        && method.GetParameters().Length == 2
+                        && method.GetParameters()[0].ParameterType == typeof(_LightColorEventBox));
+            }
+
+            [HarmonyPostfix]
+            private static void Postfix(
+                _LightColorEventBox saveData,
+                BeatmapEventDataBox __result)
+            {
+                LightColorEventBoxConverterPostfix(saveData, __result);
             }
         }
     }
