@@ -216,7 +216,8 @@ namespace ChromaGLS.HarmonyPatches
                 Plugin.Log.Info($"[ChromaGLS 1.29] transition current={currentEventData.transitionType} next={nextEventData?.transitionType} hasTween={hasTween} currentStrobeFade={GetStrobeFade(currentEventData)} nextStrobeFade={(nextEventData != null ? GetStrobeFade(nextEventData) : false)} currentStrobeBrightness={ResolveStrobeBrightness(currentEventData)} nextStrobeBrightness={(nextEventData != null ? ResolveStrobeBrightness(nextEventData) : 0f)} currentFrequency={currentEventData.strobeBeatFrequency} nextFrequency={(nextEventData?.strobeBeatFrequency ?? 0)}");
             }
 #elif PRE_V1_37_1
-            bool hasTween = nextEventData != null && currentEventData.transitionType != BeatmapEventTransitionType.Instant;
+            // 1.34.2 starts a fade only when the upcoming node requests interpolation.
+            bool hasTween = nextEventData != null && nextEventData.transitionType == BeatmapEventTransitionType.Interpolate;
 #else
             bool hasTween = nextEventData != null && nextEventData.easeType != EaseType.None;
 #endif
