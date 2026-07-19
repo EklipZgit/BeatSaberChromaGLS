@@ -83,6 +83,7 @@ namespace ChromaGLS.HarmonyPatches
         // Temporary bounded diagnostics isolate whether bright-period flicker comes from phase or brightness inputs.
         private static int StrobeFadeDiagnosticCount;
         private static int StrobeOutputDiagnosticCount;
+        private static int FilteredStrobeDiagnosticCount;
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(LightColorGroupEffect), nameof(LightColorGroupEffect.SetColor))]
@@ -125,7 +126,15 @@ namespace ChromaGLS.HarmonyPatches
                     t,
                     (Color)FromColorField.GetValue(__instance),
                     (Color)ToColorField.GetValue(__instance)) ?? color;
-                if ((bool)StrobeFadeField.GetValue(__instance))
+                bool strobeFade = (bool)StrobeFadeField.GetValue(__instance);
+                int diagnosticLightId = (int)LightIdField.GetValue(__instance);
+                if (diagnosticLightId == 221 && FilteredStrobeDiagnosticCount++ < 160)
+                {
+                    Plugin.Log.Info($"[ChromaGLS filtered-strobe] lightId={diagnosticLightId} t={t:F4} fromFrequency={fromFrequency:F4} toFrequency={toFrequency:F4} fromBrightness={(float)FromStrobeBrightnessField.GetValue(__instance):F4} toBrightness={(float)ToStrobeBrightnessField.GetValue(__instance):F4} phase={phase:F4} fade={strobeFade} normal={color} strobe={strobeColor}");
+                }
+
+                // Verify the serialized sf flag independently from strobe brightness and color state.
+                if (strobeFade)
                 {
                     float fade = InOutCubic(1f - Mathf.Abs((phase * 2f) - 1f));
                     if (StrobeFadeDiagnosticCount++ < 120)
@@ -261,13 +270,21 @@ namespace ChromaGLS.HarmonyPatches
                 Plugin.Log.Info($"[ChromaGLS] prepare forceNoTween={forceNoTweenColor} group={currentEventData.groupId} element={currentEventData.elementId} time={currentEventData.time:F4} currentColor={fromColor} currentStrobe={currentStrobeColor} transition={hasTween} nextColor={toColor} nextStrobe={nextCustomStrobeColor} nativeFrom={(Color)FromColorField.GetValue(__instance)} nativeTo={(Color)ToColorField.GetValue(__instance)}");
             }
             Color toStrobeColor = nextCustomStrobeColor ?? currentStrobeColor;
+            Color oemToColor = (Color)ToColorField.GetValue(__instance);
+            // Keep custom RGB, but preserve native brightness alpha for the normal half of each strobe cycle.
+            Color normalFromColor = fromColor.HasValue
+                ? WithAlpha(fromColor.Value, oemFromColor.a)
+                : oemFromColor;
+            Color normalToColor = hasTween
+                ? toColor.HasValue
+                    ? WithAlpha(toColor.Value, oemToColor.a)
+                    : oemToColor
+                : normalFromColor;
             StrobeColorStates.GetOrCreateValue(__instance).Set(
                 currentStrobeColor,
                 nextCustomStrobeColor,
-                fromColor ?? oemFromColor,
-                hasTween
-                    ? toColor ?? (Color)ToColorField.GetValue(__instance)
-                    : fromColor ?? oemFromColor);
+                normalFromColor,
+                normalToColor);
             if (customStrobeColor.HasValue || nextCustomStrobeColor.HasValue)
             {
                 Plugin.Log.Info($"[ChromaGLS] strobeColor group={currentEventData.groupId} element={currentEventData.elementId} time={currentEventData.time:F4} from={customStrobeColor.HasValue} to={nextCustomStrobeColor.HasValue}");
