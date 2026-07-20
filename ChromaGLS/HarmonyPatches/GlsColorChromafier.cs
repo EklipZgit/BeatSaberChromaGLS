@@ -51,6 +51,8 @@ namespace ChromaGLS.HarmonyPatches
 #endif
 #if V1_29_1
         private static readonly ConditionalWeakTable<LightColorGroupEffect, LegacyStrobeState> LegacyStrobeStates = new();
+        private static readonly ConditionalWeakTable<object, LegacyFogState> LegacyFogStates = new();
+        private static int LegacyOutputDiagnosticCount;
 #else
         private static readonly FieldInfo FromStrobeFrequencyField =
             typeof(LightColorGroupEffect).GetField("_fromStrobeFrequency", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -443,16 +445,20 @@ namespace ChromaGLS.HarmonyPatches
         [HarmonyPatch(typeof(LightColorGroupEffect), nameof(LightColorGroupEffect.SetColor))]
         private static bool LegacySetColorPrefix(LightColorGroupEffect __instance, float t)
         {
-            Color color = Color.LerpUnclamped(
-                (Color)FromColorField.GetValue(__instance),
-                (Color)ToColorField.GetValue(__instance),
-                t);
+            StrobeColorStates.TryGetValue(__instance, out StrobeColorState? colorState);
+            // Match the modern path by restoring custom normal-color endpoints instead of lerping stale native fields.
+            Color normalFrom = colorState?.NormalFrom ?? (Color)FromColorField.GetValue(__instance);
+            Color normalTo = colorState?.NormalTo ?? (Color)ToColorField.GetValue(__instance);
+            Color color = Color.LerpUnclamped(normalFrom, normalTo, t);
 
             float fromFrequency = (float)FromStrobeFrequencyField.GetValue(__instance);
             float toFrequency = (float)ToStrobeFrequencyField.GetValue(__instance);
+            float diagnosticPhase = 0f;
+            float diagnosticFade = 0f;
+            float diagnosticStrobeBrightness = 0f;
+            LegacyStrobeStates.TryGetValue(__instance, out LegacyStrobeState? state);
             if (fromFrequency > 0 || toFrequency > 0)
             {
-                LegacyStrobeStates.TryGetValue(__instance, out LegacyStrobeState? state);
                 float strobeBrightness = state == null
                     ? 0f
                     : Mathf.LerpUnclamped(state.FromBrightness, state.ToBrightness, t);
@@ -462,35 +468,95 @@ namespace ChromaGLS.HarmonyPatches
                 float elapsed = t * duration;
                 float elapsedHalf = duration > 0 ? elapsed * elapsed / (2f * duration) : 0f;
                 float phase = ((-fromFrequency * elapsedHalf) + (fromFrequency * elapsed) + (toFrequency * elapsedHalf)) % 1f;
+                diagnosticPhase = phase;
+                diagnosticStrobeBrightness = strobeBrightness;
 
                 if (state is { Fade: true })
                 {
                     float fade = InOutCubic(1f - Mathf.Abs((phase * 2f) - 1f));
-                    Color strobeColor = StrobeColorStates.TryGetValue(__instance, out StrobeColorState? colorState)
-                        ? colorState.GetColor(
-                            t,
-                            (Color)FromColorField.GetValue(__instance),
-                            (Color)ToColorField.GetValue(__instance)) ?? color
-                        : color;
-                    // Alpha is HDR intensity, so interpolate emitted RGB energy instead of independently amplifying mixed RGB.
-                    color = LerpHdrColor(color, WithAlpha(strobeColor, strobeBrightness), fade);
+                    diagnosticFade = fade;
+                    Color strobeColor = colorState?.GetColor(
+                        t,
+                        (Color)FromColorField.GetValue(__instance),
+                        (Color)ToColorField.GetValue(__instance)) ?? color;
+                    // The 1.29.1 fog pipeline needs the game's straight color fade; HDR source weighting makes the dim-color half collapse.
+                    color = Color.LerpUnclamped(color, WithAlpha(strobeColor, strobeBrightness), fade);
                 }
                 else if (phase > 0.5f)
                 {
-                    Color strobeColor = StrobeColorStates.TryGetValue(__instance, out StrobeColorState? colorState)
-                        ? colorState.GetColor(
-                            t,
-                            (Color)FromColorField.GetValue(__instance),
-                            (Color)ToColorField.GetValue(__instance)) ?? color
-                        : color;
+                    Color strobeColor = colorState?.GetColor(
+                        t,
+                        (Color)FromColorField.GetValue(__instance),
+                        (Color)ToColorField.GetValue(__instance)) ?? color;
                     color = WithAlpha(strobeColor, strobeBrightness);
                 }
             }
 
             object lightManager = LightManagerField.GetValue(__instance);
             int lightId = (int)LightIdField.GetValue(__instance);
+            // Compensate only legacy fog during a hard strobe's custom normal half; preserve tube and material RGBA.
+            bool compensateNormalFog = colorState is { HasCustomColor: true }
+                && state is { Fade: false }
+                && diagnosticPhase <= 0.5f;
+            SetLegacyFogCompensation(lightManager, lightId, compensateNormalFog);
             SetColorForIdMethod?.Invoke(lightManager, new object[] { lightId, color });
+            if (LegacyOutputDiagnosticCount++ < 240)
+            {
+                string tubeState = "missing";
+                FieldInfo lightsField = lightManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (lightsField?.GetValue(lightManager) is Array lights
+                    && lights.GetValue(lightId) is IEnumerable renderers)
+                {
+                    foreach (object renderer in renderers)
+                    {
+                        if (renderer?.GetType().FullName != "TubeBloomPrePassLightWithId")
+                        {
+                            continue;
+                        }
+
+                        object tube = renderer.GetType().GetField("_tubeBloomPrePassLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                        Type? tubeType = tube?.GetType();
+                        object? tubeColor = tubeType?.GetField("_color", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                        object? bloomMultiplier = tubeType?.GetField("_bloomFogIntensityMultiplier", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                        tubeState = $"color={tubeColor},bloomMultiplier={bloomMultiplier}";
+                        break;
+                    }
+                }
+
+                Plugin.Log.Info($"[ChromaGLS 1.29 output] lightId={lightId} t={t:F4} phase={diagnosticPhase:F4} fade={diagnosticFade:F4} strobeBrightness={diagnosticStrobeBrightness:F4} output={color} tube={tubeState}");
+            }
+
             return false;
+        }
+
+        private static void SetLegacyFogCompensation(object lightManager, int lightId, bool compensate)
+        {
+            FieldInfo lightsField = lightManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (lightsField?.GetValue(lightManager) is not Array lights
+                || lights.GetValue(lightId) is not IEnumerable renderers)
+            {
+                return;
+            }
+
+            foreach (object renderer in renderers)
+            {
+                if (renderer?.GetType().FullName != "TubeBloomPrePassLightWithId")
+                {
+                    continue;
+                }
+
+                object tube = renderer.GetType().GetField("_tubeBloomPrePassLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                FieldInfo? multiplierField = tube?.GetType().GetField("_bloomFogIntensityMultiplier", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (tube == null || multiplierField == null)
+                {
+                    continue;
+                }
+
+                LegacyFogState fogState = LegacyFogStates.GetValue(
+                    tube,
+                    key => new LegacyFogState((float)multiplierField.GetValue(key)));
+                multiplierField.SetValue(tube, compensate ? fogState.BaseMultiplier * 2f : fogState.BaseMultiplier);
+            }
         }
 
         private static readonly PropertyInfo TweenDurationProperty =
@@ -503,6 +569,16 @@ namespace ChromaGLS.HarmonyPatches
 
         private static float InOutCubic(float t) =>
             t < 0.5f ? 4f * t * t * t : 1f - (Mathf.Pow((-2f * t) + 2f, 3f) / 2f);
+
+        private sealed class LegacyFogState
+        {
+            public LegacyFogState(float baseMultiplier)
+            {
+                BaseMultiplier = baseMultiplier;
+            }
+
+            public float BaseMultiplier { get; }
+        }
 
         private sealed class LegacyStrobeState
         {
