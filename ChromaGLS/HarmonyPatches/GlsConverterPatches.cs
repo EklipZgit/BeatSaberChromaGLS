@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -77,18 +78,19 @@ namespace ChromaGLS.HarmonyPatches
 
             List<CustomData?> perEventData = new();
             bool anyCustom = false;
+            CustomData? previousEffectiveCustomData = null;
             foreach (_LightColorBaseData item in saveData.lightColorBaseDataList ?? new List<_LightColorBaseData>())
             {
-                if (item is ICustomData cd && cd.customData.Count > 0)
-                {
-                    // Preserve legacy strobe metadata on OEM events; ResolveCustomColor separately requires explicit GLS color keys.
-                    perEventData.Add(cd.customData);
-                    anyCustom = true;
-                }
-                else
-                {
-                    perEventData.Add(null);
-                }
+                // Extension nodes are exact copies within this event box/filter lane, including the predecessor's Chroma payload.
+                bool isExtension = Convert.ToInt32(item.transitionType) == 2;
+                CustomData? effectiveCustomData = isExtension
+                    ? previousEffectiveCustomData
+                    : item is ICustomData cd && cd.customData.Count > 0
+                        ? cd.customData
+                        : null;
+                perEventData.Add(effectiveCustomData);
+                previousEffectiveCustomData = effectiveCustomData;
+                anyCustom |= effectiveCustomData != null;
             }
 
             if (anyCustom)
