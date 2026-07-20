@@ -45,6 +45,8 @@ namespace ChromaGLS.HarmonyPatches
         // Keep diagnostics shared across game-version-specific strobe implementations.
         private static int EventColorDiagnosticCount;
         private static int MaterialStrobeDiagnosticCount;
+        // Compare the same white/green-to-yellow/blue renderer path in 1.29.1 and 1.34.2 without changing its output.
+        private static int GroupEightRendererDiagnosticCount;
 #if !PRE_V1_37_1
         private static int PerLightTransitionDiagnosticCount;
         private static int PerLightOutputDiagnosticCount;
@@ -236,6 +238,15 @@ namespace ChromaGLS.HarmonyPatches
             }
 #endif
             SetColorForIdMethod?.Invoke(lightManager, new object[] { lightId, color });
+            // Capture the group-eight renderer inputs and serialized parent configuration at the reported blue-brightness interval.
+            if (lightId == 206
+                && t >= 0.2f
+                && t <= 0.3f
+                && GroupEightRendererDiagnosticCount++ < 40)
+            {
+                Plugin.Log.Info($"[ChromaGLS group8 renderer] lightId={lightId} t={t:F4} input={color} state={GetDetailedRendererState(lightManager, lightId)}");
+            }
+
             // MaterialLightWithId can reinterpret alpha as RGB or multiply RGB by HDR alpha; record its actual configured mode.
             LogMaterialStrobeState(lightManager, lightId, "custom", t, color);
             return false;
@@ -330,8 +341,10 @@ namespace ChromaGLS.HarmonyPatches
                 if (rendererType.FullName == "TubeBloomPrePassLightWithId")
                 {
                     object tube = rendererType.GetField("_tubeBloomPrePassLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
-                    object? tubeColor = tube?.GetType().GetField("_color", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
-                    states.Add($"tube={tubeColor}");
+                    Type? tubeType = tube?.GetType();
+                    object? tubeColor = tubeType?.GetField("_color", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                    object? bloomMultiplier = tubeType?.GetField("_bloomFogIntensityMultiplier", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                    states.Add($"tube={tubeColor},bloom={bloomMultiplier}");
                     continue;
                 }
 
@@ -348,6 +361,68 @@ namespace ChromaGLS.HarmonyPatches
         private static float InOutCubic(float t) =>
             t < 0.5f ? 4f * t * t * t : 1f - (Mathf.Pow((-2f * t) + 2f, 3f) / 2f);
 #endif
+
+        private static string GetDetailedRendererState(object lightManager, int lightId)
+        {
+            // Resolve the nested per-ID renderer children and their parent configuration because their output is produced after SetColorForId returns.
+            FieldInfo lightsField = lightManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (lightsField?.GetValue(lightManager) is not Array lights
+                || lights.GetValue(lightId) is not IEnumerable renderers)
+            {
+                return "missing";
+            }
+
+            List<string> states = new();
+            foreach (object renderer in renderers)
+            {
+                Type? rendererType = renderer?.GetType();
+                if (rendererType == null)
+                {
+                    continue;
+                }
+
+                string rendererName = rendererType.FullName ?? rendererType.Name;
+                if (rendererName.Contains("RuntimeLightWithIds+LightIntensitiesWithId"))
+                {
+                    object? parent = GetInheritedFieldValue(renderer, "_parentLightWithIds");
+                    states.Add($"runtime(childColor={GetInheritedFieldValue(renderer, "_color")},childIntensity={GetInheritedFieldValue(renderer, "_intensity")},parentIntensity={GetInheritedFieldValue(parent, "_intensity")},maxIntensity={GetInheritedFieldValue(parent, "_maxIntensity")},multiplyAlpha={GetInheritedFieldValue(parent, "_multiplyColorByAlpha")},mix={GetInheritedFieldValue(parent, "_mixType")})");
+                    continue;
+                }
+
+                if (rendererName.Contains("LightmapLightWithIds+LightIntensitiesWithId"))
+                {
+                    object? parent = GetInheritedFieldValue(renderer, "_parentLightWithIds");
+                    states.Add($"lightmap(childColor={GetInheritedFieldValue(renderer, "_color")},childIntensity={GetInheritedFieldValue(renderer, "_intensity")},probeMultiplier={GetInheritedFieldValue(renderer, "_probeHighlightsIntensityMultiplier")},parentIntensity={GetInheritedFieldValue(parent, "_intensity")},probeIntensity={GetInheritedFieldValue(parent, "_probeIntensity")},mix={GetInheritedFieldValue(parent, "_mixType")},normalizer={GetInheritedFieldValue(parent, "_isNormalizerInScene")},calculated={GetInheritedFieldValue(parent, "_calculatedColorPreNormalization")})");
+                    continue;
+                }
+
+                if (rendererName == "TubeBloomPrePassLightWithId")
+                {
+                    object? tube = GetInheritedFieldValue(renderer, "_tubeBloomPrePassLight");
+                    states.Add($"tube(color={GetInheritedFieldValue(tube, "_color")},bloom={GetInheritedFieldValue(tube, "_bloomFogIntensityMultiplier")})");
+                    continue;
+                }
+
+                states.Add($"{rendererName}(color={GetInheritedFieldValue(renderer, "_color")})");
+            }
+
+            return string.Join(";", states);
+        }
+
+        private static object? GetInheritedFieldValue(object? instance, string fieldName)
+        {
+            // Private renderer state is distributed across nested child and base classes in both legacy and modern HMRendering assemblies.
+            for (Type? type = instance?.GetType(); type != null; type = type.BaseType)
+            {
+                FieldInfo? field = type.GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                if (field != null)
+                {
+                    return field.GetValue(instance);
+                }
+            }
+
+            return null;
+        }
 
         [HarmonyPrefix]
         private static void Prefix(
@@ -551,7 +626,7 @@ namespace ChromaGLS.HarmonyPatches
                 // Native 1.29.1 SetColor already handles non-strobe custom RGB fields and preserves its exact transition timing.
                 object nativeLightManager = LightManagerField.GetValue(__instance);
                 int nativeLightId = (int)LightIdField.GetValue(__instance);
-                SetLegacyFogNormalization(nativeLightManager, nativeLightId, false);
+                SetLegacyFogCompensation(nativeLightManager, nativeLightId, false);
                 return true;
             }
 
@@ -603,11 +678,22 @@ namespace ChromaGLS.HarmonyPatches
 
             object lightManager = LightManagerField.GetValue(__instance);
             int lightId = (int)LightIdField.GetValue(__instance);
-            // Normalize custom hard-strobe fog for both color halves so renderer tuning cannot dim custom RGB or shift the phase boundary.
-            bool normalizeCustomHardStrobeFog = colorState is { HasCustomColor: true }
-                && state is { Fade: false };
-            SetLegacyFogNormalization(lightManager, lightId, normalizeCustomHardStrobeFog);
+            // The legacy shader dims the normal-color half of an explicit hard color/strobeColor pair; color-only and native strobes must retain their original fog path.
+            bool compensateExplicitHardStrobeNormal = colorState is { HasExplicitStrobeColor: true }
+                && state is { Fade: false }
+                && (fromFrequency > 0f || toFrequency > 0f)
+                && diagnosticPhase <= 0.5f;
+            SetLegacyFogCompensation(lightManager, lightId, compensateExplicitHardStrobeNormal);
             SetColorForIdMethod?.Invoke(lightManager, new object[] { lightId, color });
+            // Capture the same group-eight renderer inputs and serialized parent configuration as the 1.34.2 path.
+            if (lightId == 206
+                && t >= 0.2f
+                && t <= 0.3f
+                && GroupEightRendererDiagnosticCount++ < 40)
+            {
+                Plugin.Log.Info($"[ChromaGLS group8 renderer] lightId={lightId} t={t:F4} input={color} state={GetDetailedRendererState(lightManager, lightId)}");
+            }
+
             // Record one near-end sample per transition so late-map phase and output cannot be hidden by early per-frame logs.
             if (state != null
                 && state.ShouldLogSparseOutput(t)
@@ -691,7 +777,7 @@ namespace ChromaGLS.HarmonyPatches
             return string.Join(";", states);
         }
 
-        private static void SetLegacyFogNormalization(object lightManager, int lightId, bool normalize)
+        private static void SetLegacyFogCompensation(object lightManager, int lightId, bool compensate)
         {
             FieldInfo lightsField = lightManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (lightsField?.GetValue(lightManager) is not Array lights
@@ -717,8 +803,7 @@ namespace ChromaGLS.HarmonyPatches
                 LegacyFogState fogState = LegacyFogStates.GetValue(
                     tube,
                     key => new LegacyFogState((float)multiplierField.GetValue(key)));
-                // A unit multiplier preserves authored RGBA fog intensity; the stored renderer value is restored outside custom hard strobes.
-                multiplierField.SetValue(tube, normalize ? 1f : fogState.BaseMultiplier);
+                multiplierField.SetValue(tube, compensate ? fogState.BaseMultiplier * 2f : fogState.BaseMultiplier);
             }
         }
 
