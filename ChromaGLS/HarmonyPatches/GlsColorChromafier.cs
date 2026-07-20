@@ -175,10 +175,12 @@ namespace ChromaGLS.HarmonyPatches
                             Type? tubeType = tube?.GetType();
                             object? boostToWhite = tubeType?.GetField("_boostToWhite", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
                             object? currentTubeColor = tubeType?.GetField("_color", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                            // DIAGNOSTICS ONLY: measure the modern fog multiplier needed to derive the exact 1.29.1 compensation ratio.
+                            object? bloomMultiplier = tubeType?.GetField("_bloomFogIntensityMultiplier", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
                             object? limitAlpha = tubeType?.GetField("_limitAlpha", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
                             object? minAlpha = tubeType?.GetField("_minAlpha", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
                             object? maxAlpha = tubeType?.GetField("_maxAlpha", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
-                            rendererType += $"(color={currentTubeColor},boostToWhite={boostToWhite},limitAlpha={limitAlpha},minAlpha={minAlpha},maxAlpha={maxAlpha})";
+                            rendererType += $"(color={currentTubeColor},bloomMultiplier={bloomMultiplier},boostToWhite={boostToWhite},limitAlpha={limitAlpha},minAlpha={minAlpha},maxAlpha={maxAlpha})";
                         }
 
                         rendererTypes.Add(rendererType);
@@ -547,9 +549,12 @@ namespace ChromaGLS.HarmonyPatches
                     || legacyData.customData.ContainsKey("__chromaGLS_strobeFade")))
             {
                 // OEM 1.29.1 nodes still need their backported brightness/fade metadata even without custom colors.
+                // A non-transition node changes the level at its boundary; it is not the endpoint of the current interval's brightness tween.
                 GetOrCreateLegacyStrobeState(__instance).Set(
                     ResolveStrobeBrightness(currentEventData),
-                    nextEventData == null ? ResolveStrobeBrightness(currentEventData) : ResolveStrobeBrightness(nextEventData),
+                    hasTween && nextEventData != null
+                        ? ResolveStrobeBrightness(nextEventData)
+                        : ResolveStrobeBrightness(currentEventData),
                     GetStrobeFade(currentEventData),
                     currentEventData.time,
                     nextEventData?.time ?? currentEventData.time,
@@ -662,6 +667,17 @@ namespace ChromaGLS.HarmonyPatches
                 // Preserve the boost track independently from the external custom strobe RGB track.
                 ApplyColorWithAlpha(ref alternativeToField, toColor.Value);
             }
+
+#if V1_29_1
+            // 1.29.1 can defer the first legacy tween frame; explicitly render t=0 so faded strobes do not start already mixed.
+            if (forceNoTweenColor
+                && customStrobeColor.HasValue
+                && GetStrobeFade(currentEventData)
+                && currentEventData.strobeBeatFrequency > 0)
+            {
+                InvokeOriginalSetColor(__instance, 0f);
+            }
+#endif
         }
 
 #if V1_29_1
@@ -697,31 +713,41 @@ namespace ChromaGLS.HarmonyPatches
             int ___lightId = ____lightId;
 
             StrobeColorStates.TryGetValue(__instance, out StrobeColorState? colorState);
+            LegacyStrobeStates.TryGetValue(__instance, out LegacyStrobeState? state);
+            // 1.29.1 can defer the first legacy tween update; render that one explicit faded-strobe frame from t=0.
+            float outputT = t;
+            if (colorState is { HasExplicitStrobeColor: true }
+                && state is { Fade: true }
+                && !state.InitialFrameRendered)
+            {
+                outputT = 0f;
+                state.InitialFrameRendered = true;
+            }
+
             // Match the modern path by restoring custom normal-color endpoints instead of lerping stale native fields.
             Color normalFrom = colorState?.NormalFrom ?? ___fromColor;
             Color normalTo = colorState?.NormalTo ?? ___toColor;
-            Color color = Color.LerpUnclamped(normalFrom, normalTo, t);
+            Color color = Color.LerpUnclamped(normalFrom, normalTo, outputT);
 
             if (___fromStrobeFrequency <= 0f && ___toStrobeFrequency <= 0f)
             {
                 // Native 1.29.1 SetColor already handles non-strobe custom RGB fields and preserves its exact transition timing.
-                SetLegacyFogCompensation(__instance, false);
+                SetLegacyFogCompensation(__instance, 1f);
                 return true;
             }
 
             float strobePhase = 0f;
             float diagnosticFade = 0f;
             float diagnosticStrobeBrightness = 0f;
-            LegacyStrobeStates.TryGetValue(__instance, out LegacyStrobeState? state);
             // DIAGNOSTICS ONLY: retain maximum tween progress for timing logs.
             state?.RecordProgress(t, ___floatTween.duration);
             if (___fromStrobeFrequency > 0f || ___toStrobeFrequency > 0f)
             {
                 float strobeBrightness = state == null
                     ? 0f
-                    : Mathf.LerpUnclamped(state.FromBrightness, state.ToBrightness, t);
+                    : Mathf.LerpUnclamped(state.FromBrightness, state.ToBrightness, outputT);
                 float duration = ___floatTween.duration;
-                float elapsed = t * duration;
+                float elapsed = outputT * duration;
                 float elapsedHalf = duration > 0f ? elapsed * elapsed / (2f * duration) : 0f;
                 float phase = ((-___fromStrobeFrequency * elapsedHalf) + (___fromStrobeFrequency * elapsed) + (___toStrobeFrequency * elapsedHalf)) % 1f;
                 strobePhase = phase;
@@ -733,27 +759,33 @@ namespace ChromaGLS.HarmonyPatches
                     diagnosticFade = fade;
                     // Native 1.34.2 strobes reuse normal tween RGB; only explicit strobeColor needs a separate RGB interpolation.
                     Color strobeColor = colorState is { HasExplicitStrobeColor: true }
-                        ? colorState.GetColor(t, ___fromColor, ___toColor) ?? color
+                        ? colorState.GetColor(outputT, ___fromColor, ___toColor) ?? color
                         : color;
-                    // The 1.29.1 fog pipeline needs the game's straight color fade; HDR source weighting makes the dim-color half collapse.
-                    color = Color.LerpUnclamped(color, WithAlpha(strobeColor, strobeBrightness), fade);
+                    // Explicit strobe RGB needs emitted-energy interpolation so mixed RGB is not amplified by an already-high HDR alpha.
+                    color = colorState is { HasExplicitStrobeColor: true }
+                        ? LerpHdrColor(color, WithAlpha(strobeColor, strobeBrightness), fade)
+                        : Color.LerpUnclamped(color, WithAlpha(strobeColor, strobeBrightness), fade);
                 }
                 else if (phase > 0.5f)
                 {
                     // Native 1.34.2 strobes reuse normal tween RGB; only explicit strobeColor needs a separate RGB interpolation.
                     Color strobeColor = colorState is { HasExplicitStrobeColor: true }
-                        ? colorState.GetColor(t, ___fromColor, ___toColor) ?? color
+                        ? colorState.GetColor(outputT, ___fromColor, ___toColor) ?? color
                         : color;
                     color = WithAlpha(strobeColor, strobeBrightness);
                 }
             }
 
-            // The legacy shader dims the normal-color half of an explicit hard color/strobeColor pair; color-only and native strobes must retain their original fog path.
-            bool compensateExplicitHardStrobeNormal = colorState is { HasExplicitStrobeColor: true }
-                && state is { Fade: false }
-                && (___fromStrobeFrequency > 0f || ___toStrobeFrequency > 0f)
-                && strobePhase <= 0.5f;
-            SetLegacyFogCompensation(__instance, compensateExplicitHardStrobeNormal);
+            // The legacy fog path halves the normal-color endpoint, so blend its hard-strobe compensation out as the faded strobe endpoint takes over.
+            float legacyFogCompensation = colorState is { HasExplicitStrobeColor: true } && state is { Fade: true }
+                ? 2f - diagnosticFade
+                : colorState is { HasExplicitStrobeColor: true }
+                    && state is { Fade: false }
+                    && (___fromStrobeFrequency > 0f || ___toStrobeFrequency > 0f)
+                    && strobePhase <= 0.5f
+                        ? 2f
+                        : 1f;
+            SetLegacyFogCompensation(__instance, legacyFogCompensation);
             // Avoid reflection, boxing, and an argument-array allocation in the legacy per-frame path.
             ___lightManager.SetColorForId(___lightId, color);
             // DIAGNOSTICS ONLY: capture group-eight renderer inputs and serialized parent configuration.
@@ -888,11 +920,11 @@ namespace ChromaGLS.HarmonyPatches
         }
 
         // PRODUCTION LEGACY HOT PATH: cached state performs a direct field-ref assignment with no reflection or boxing.
-        private static void SetLegacyFogCompensation(LightColorGroupEffect instance, bool compensate)
+        private static void SetLegacyFogCompensation(LightColorGroupEffect instance, float compensation)
         {
             if (LegacyFogStates.TryGetValue(instance, out LegacyFogState? fogState))
             {
-                fogState.SetCompensated(compensate);
+                fogState.SetCompensated(compensation);
             }
         }
 
@@ -916,9 +948,10 @@ namespace ChromaGLS.HarmonyPatches
                 _baseMultiplier = multiplierRef(tube);
             }
 
-            public void SetCompensated(bool compensate)
+            public void SetCompensated(float compensation)
             {
-                _multiplierRef(_tube) = compensate ? _baseMultiplier * 2f : _baseMultiplier;
+                // Scale only the cached legacy fog multiplier; renderer RGBA and strobe brightness remain unchanged.
+                _multiplierRef(_tube) = _baseMultiplier * compensation;
             }
         }
 
@@ -954,6 +987,9 @@ namespace ChromaGLS.HarmonyPatches
 
             private bool LoggedSparseOutput { get; set; }
 
+            // Track whether the deferred legacy tween startup frame has been rendered for this interval.
+            public bool InitialFrameRendered { get; set; }
+
             // DIAGNOSTICS ONLY: expose timing and target metadata used by bounded legacy logs.
             public bool IsDiagnosticTarget => GroupId == 3 && ElementId == 0 && CurrentEventTime > 0f;
 
@@ -988,6 +1024,8 @@ namespace ChromaGLS.HarmonyPatches
                 {
                     MaximumProgress = 0f;
                     LoggedSparseOutput = false;
+                    // A new tween interval needs one fresh synthetic t=0 startup frame.
+                    InitialFrameRendered = false;
                 }
 
                 FromBrightness = fromBrightness;
