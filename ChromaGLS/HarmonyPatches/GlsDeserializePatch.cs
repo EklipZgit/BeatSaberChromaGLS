@@ -54,16 +54,25 @@ namespace ChromaGLS.HarmonyPatches
 #endif
     internal static class GlsDeserializePatch
     {
+#if PRE_V1_37_1
+        // Cache the legacy CJD parser delegate because this is called once per event box on the map-loading hot path.
+        private static readonly Func<JsonReader, _IndexFilter> DeserializeIndexFilterDelegate = CreateDeserializeIndexFilterDelegate();
+
+        private static Func<JsonReader, _IndexFilter> CreateDeserializeIndexFilterDelegate()
+        {
+            Type saveDataType = AccessTools.TypeByName("CustomJSONData.CustomBeatmap.CustomBeatmapSaveData")
+                ?? AccessTools.TypeByName("CustomJSONData.CustomBeatmap.Custom2_6_0AndEarlierBeatmapSaveData");
+            MethodInfo method = saveDataType.GetMethod(
+                "DeserializeIndexFilter",
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            return (Func<JsonReader, _IndexFilter>)method.CreateDelegate(typeof(Func<JsonReader, _IndexFilter>));
+        }
+#endif
+
         private static _IndexFilter? DeserializeIndexFilter(JsonReader reader)
         {
 #if PRE_V1_37_1
-            Type? saveDataType = AccessTools.TypeByName("CustomJSONData.CustomBeatmap.CustomBeatmapSaveData")
-                ?? AccessTools.TypeByName("CustomJSONData.CustomBeatmap.Custom2_6_0AndEarlierBeatmapSaveData");
-            MethodInfo? method = saveDataType?.GetMethod(
-                "DeserializeIndexFilter",
-                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-            object? result = method?.Invoke(null, new object[] { reader });
-            return result is _IndexFilter filter ? filter : null;
+            return DeserializeIndexFilterDelegate(reader);
 #else
             return _SaveData.DeserializeIndexFilter(reader);
 #endif
