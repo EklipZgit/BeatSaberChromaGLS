@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -43,6 +44,7 @@ namespace ChromaGLS.HarmonyPatches
 
         // Keep diagnostics shared across game-version-specific strobe implementations.
         private static int EventColorDiagnosticCount;
+        private static int MaterialStrobeDiagnosticCount;
 #if !PRE_V1_37_1
         private static int PerLightTransitionDiagnosticCount;
         private static int PerLightOutputDiagnosticCount;
@@ -84,6 +86,8 @@ namespace ChromaGLS.HarmonyPatches
         private static int StrobeFadeDiagnosticCount;
         private static int StrobeOutputDiagnosticCount;
         private static int FilteredStrobeDiagnosticCount;
+        private static int DifferentColorStrobeDiagnosticCount;
+        private static int NativeStrobeDiagnosticCount;
 
         [HarmonyPrefix]
         [HarmonyPatch(typeof(LightColorGroupEffect), nameof(LightColorGroupEffect.SetColor))]
@@ -141,7 +145,9 @@ namespace ChromaGLS.HarmonyPatches
                     {
                         Plugin.Log.Info($"[ChromaGLS] strobeFade t={t:F4} phase={phase:F4} fade={fade:F4} normalAlpha={color.a:F4} strobeBrightness={strobeBrightness:F4} normal={color} strobe={strobeColor} stateFrom={state?.From} stateTo={state?.To}");
                     }
-                    color = Color.LerpUnclamped(color, WithAlpha(strobeColor, strobeBrightness), fade);
+                    // Alpha is HDR intensity, so interpolate emitted RGB energy instead of independently amplifying mixed RGB.
+                    color = LerpHdrColor(color, WithAlpha(strobeColor, strobeBrightness), fade);
+
                     if (fade < 0.01f || fade > 0.95f)
                     {
                         Plugin.Log.Info($"[ChromaGLS] strobeFade output phase={phase:F4} fade={fade:F4} output={color}");
@@ -150,6 +156,43 @@ namespace ChromaGLS.HarmonyPatches
                 else if (phase > 0.5f)
                 {
                     color = WithAlpha(strobeColor, strobeBrightness);
+                }
+
+                Color currentNormalColor = Color.LerpUnclamped(normalFrom, normalTo, t);
+                bool differentRgb = !Mathf.Approximately(currentNormalColor.r, strobeColor.r)
+                    || !Mathf.Approximately(currentNormalColor.g, strobeColor.g)
+                    || !Mathf.Approximately(currentNormalColor.b, strobeColor.b);
+                bool nearExtremum = Mathf.Abs(phase - 0.5f) < 0.08f || phase < 0.08f || phase > 0.92f;
+                // Diagnose the strobeColor-only material flicker without altering the staged fade output.
+                if (strobeFade && differentRgb && nearExtremum && DifferentColorStrobeDiagnosticCount++ < 120)
+                {
+                    int diagnosticId = (int)LightIdField.GetValue(__instance);
+                    object diagnosticManager = LightManagerField.GetValue(__instance);
+                    FieldInfo lightsField = diagnosticManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    Array lights = (Array)lightsField?.GetValue(diagnosticManager);
+                    List<string> rendererTypes = new();
+                    if (lights?.GetValue(diagnosticId) is IEnumerable renderers)
+                    {
+                        foreach (object renderer in renderers)
+                        {
+                            string rendererType = renderer?.GetType().FullName ?? "null";
+                            if (rendererType == "TubeBloomPrePassLightWithId")
+                            {
+                                object tube = renderer.GetType().GetField("_tubeBloomPrePassLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                                Type? tubeType = tube?.GetType();
+                                object? boostToWhite = tubeType?.GetField("_boostToWhite", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                                object? currentTubeColor = tubeType?.GetField("_color", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                                object? limitAlpha = tubeType?.GetField("_limitAlpha", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                                object? minAlpha = tubeType?.GetField("_minAlpha", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                                object? maxAlpha = tubeType?.GetField("_maxAlpha", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                                rendererType += $"(color={currentTubeColor},boostToWhite={boostToWhite},limitAlpha={limitAlpha},minAlpha={minAlpha},maxAlpha={maxAlpha})";
+                            }
+
+                            rendererTypes.Add(rendererType);
+                        }
+                    }
+
+                    Plugin.Log.Info($"[ChromaGLS different-strobe] lightId={diagnosticId} t={t:F4} phase={phase:F4} normal={currentNormalColor} strobe={strobeColor} strobeBrightness={strobeBrightness:F4} output={color} renderers={string.Join(",", rendererTypes)}");
                 }
             }
 
@@ -172,7 +215,54 @@ namespace ChromaGLS.HarmonyPatches
             }
 #endif
             SetColorForIdMethod?.Invoke(lightManager, new object[] { lightId, color });
+            // MaterialLightWithId can reinterpret alpha as RGB or multiply RGB by HDR alpha; record its actual configured mode.
+            LogMaterialStrobeState(lightManager, lightId, "custom", t, color);
             return false;
+        }
+
+        // Measure native non-custom strobe output before changing custom alpha semantics.
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(LightColorGroupEffect), nameof(LightColorGroupEffect.SetColor))]
+        private static void SetColorPostfix(LightColorGroupEffect __instance, float t)
+        {
+            if (NativeStrobeDiagnosticCount >= 120
+                || (StrobeColorStates.TryGetValue(__instance, out StrobeColorState? state) && state.HasCustomColor))
+            {
+                return;
+            }
+
+            float fromFrequency = (float)FromStrobeFrequencyField.GetValue(__instance);
+            float toFrequency = (float)ToStrobeFrequencyField.GetValue(__instance);
+            if (fromFrequency <= 0f && toFrequency <= 0f)
+            {
+                return;
+            }
+
+            object lightManager = LightManagerField.GetValue(__instance);
+            int lightId = (int)LightIdField.GetValue(__instance);
+            FieldInfo lightsField = lightManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (lightsField?.GetValue(lightManager) is not Array lights
+                || lights.GetValue(lightId) is not IEnumerable renderers)
+            {
+                return;
+            }
+
+            foreach (object renderer in renderers)
+            {
+                if (renderer?.GetType().FullName != "TubeBloomPrePassLightWithId")
+                {
+                    continue;
+                }
+
+                object tube = renderer.GetType().GetField("_tubeBloomPrePassLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                object? tubeColor = tube?.GetType().GetField("_color", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(tube);
+                Plugin.Log.Info($"[ChromaGLS native-strobe] lightId={lightId} t={t:F4} tubeColor={tubeColor}");
+                NativeStrobeDiagnosticCount++;
+                break;
+            }
+
+            // Compare native material interpretation against the custom path at the same strobe phase.
+            LogMaterialStrobeState(lightManager, lightId, "native", t, null);
         }
 
         private static Color WithAlpha(Color color, float alpha) => new(color.r, color.g, color.b, alpha);
@@ -382,7 +472,8 @@ namespace ChromaGLS.HarmonyPatches
                             (Color)FromColorField.GetValue(__instance),
                             (Color)ToColorField.GetValue(__instance)) ?? color
                         : color;
-                    color = Color.LerpUnclamped(color, WithAlpha(strobeColor, strobeBrightness), fade);
+                    // Alpha is HDR intensity, so interpolate emitted RGB energy instead of independently amplifying mixed RGB.
+                    color = LerpHdrColor(color, WithAlpha(strobeColor, strobeBrightness), fade);
                 }
                 else if (phase > 0.5f)
                 {
@@ -503,6 +594,64 @@ namespace ChromaGLS.HarmonyPatches
                 Color to = _to ?? normalTo;
                 return Color.LerpUnclamped(from, to, t);
             }
+        }
+
+        private static void LogMaterialStrobeState(object lightManager, int lightId, string path, float t, Color? input)
+        {
+            if (MaterialStrobeDiagnosticCount >= 240)
+            {
+                return;
+            }
+
+            FieldInfo lightsField = lightManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (lightsField?.GetValue(lightManager) is not Array lights
+                || lights.GetValue(lightId) is not IEnumerable renderers)
+            {
+                return;
+            }
+
+            foreach (object renderer in renderers)
+            {
+                Type? rendererType = renderer?.GetType();
+                if (rendererType?.FullName != "MaterialLightWithId")
+                {
+                    continue;
+                }
+
+                object? color = rendererType.GetField("_color", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                object? setAlphaOnly = rendererType.GetField("_setAlphaOnly", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                object? alphaIntoColor = rendererType.GetField("_alphaIntoColor", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                object? setColorOnly = rendererType.GetField("_setColorOnly", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                object? alphaIntensity = rendererType.GetField("_alphaIntensity", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                object? multiplyColorWithAlpha = rendererType.GetField("_multiplyColorWithAlpha", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                object? multiplyColor = rendererType.GetField("_multiplyColor", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                object? colorMultiplier = rendererType.GetField("_colorMultiplier", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                Plugin.Log.Info($"[ChromaGLS material-strobe] path={path} lightId={lightId} t={t:F4} input={input} result={color} setAlphaOnly={setAlphaOnly} alphaIntoColor={alphaIntoColor} setColorOnly={setColorOnly} alphaIntensity={alphaIntensity} multiplyColorWithAlpha={multiplyColorWithAlpha} multiplyColor={multiplyColor} colorMultiplier={colorMultiplier}");
+                MaterialStrobeDiagnosticCount++;
+                break;
+            }
+        }
+
+        private static Color LerpHdrColor(Color from, Color to, float t)
+        {
+            float alpha = Mathf.LerpUnclamped(from.a, to.a, t);
+            if (Mathf.Abs(alpha) < 0.000001f)
+            {
+                return new Color(
+                    Mathf.LerpUnclamped(from.r, to.r, t),
+                    Mathf.LerpUnclamped(from.g, to.g, t),
+                    Mathf.LerpUnclamped(from.b, to.b, t),
+                    alpha);
+            }
+
+            // Fade dim-color energy faster than HDR intensity so white does not linger around a saturated bright peak.
+            float fromWeight = from.a * (1f - t) * (1f - t);
+            float toWeight = alpha - fromWeight;
+            return new Color(
+                ((from.r * fromWeight) + (to.r * toWeight)) / alpha,
+                ((from.g * fromWeight) + (to.g * toWeight)) / alpha,
+                ((from.b * fromWeight) + (to.b * toWeight)) / alpha,
+                alpha);
         }
 
         private static void ApplyColorWithAlpha(FieldInfo field, LightColorGroupEffect instance, Color customColor)
