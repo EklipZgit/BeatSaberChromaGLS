@@ -551,7 +551,7 @@ namespace ChromaGLS.HarmonyPatches
                 // Native 1.29.1 SetColor already handles non-strobe custom RGB fields and preserves its exact transition timing.
                 object nativeLightManager = LightManagerField.GetValue(__instance);
                 int nativeLightId = (int)LightIdField.GetValue(__instance);
-                SetLegacyFogCompensation(nativeLightManager, nativeLightId, false);
+                SetLegacyFogNormalization(nativeLightManager, nativeLightId, false);
                 return true;
             }
 
@@ -603,8 +603,10 @@ namespace ChromaGLS.HarmonyPatches
 
             object lightManager = LightManagerField.GetValue(__instance);
             int lightId = (int)LightIdField.GetValue(__instance);
-            // Custom and native lights must use the same fog intensity path so phase-identical RGBA produces phase-identical brightness.
-            SetLegacyFogCompensation(lightManager, lightId, false);
+            // Normalize custom hard-strobe fog for both color halves so renderer tuning cannot dim custom RGB or shift the phase boundary.
+            bool normalizeCustomHardStrobeFog = colorState is { HasCustomColor: true }
+                && state is { Fade: false };
+            SetLegacyFogNormalization(lightManager, lightId, normalizeCustomHardStrobeFog);
             SetColorForIdMethod?.Invoke(lightManager, new object[] { lightId, color });
             // Record one near-end sample per transition so late-map phase and output cannot be hidden by early per-frame logs.
             if (state != null
@@ -689,7 +691,7 @@ namespace ChromaGLS.HarmonyPatches
             return string.Join(";", states);
         }
 
-        private static void SetLegacyFogCompensation(object lightManager, int lightId, bool compensate)
+        private static void SetLegacyFogNormalization(object lightManager, int lightId, bool normalize)
         {
             FieldInfo lightsField = lightManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (lightsField?.GetValue(lightManager) is not Array lights
@@ -715,7 +717,8 @@ namespace ChromaGLS.HarmonyPatches
                 LegacyFogState fogState = LegacyFogStates.GetValue(
                     tube,
                     key => new LegacyFogState((float)multiplierField.GetValue(key)));
-                multiplierField.SetValue(tube, compensate ? fogState.BaseMultiplier * 2f : fogState.BaseMultiplier);
+                // A unit multiplier preserves authored RGBA fog intensity; the stored renderer value is restored outside custom hard strobes.
+                multiplierField.SetValue(tube, normalize ? 1f : fogState.BaseMultiplier);
             }
         }
 
