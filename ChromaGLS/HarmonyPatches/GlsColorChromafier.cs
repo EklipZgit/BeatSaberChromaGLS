@@ -219,6 +219,7 @@ namespace ChromaGLS.HarmonyPatches
             return false;
         }
 
+#if false
         // DIAGNOSTICS ONLY: observe native non-custom strobe output; this postfix never changes game state.
         [HarmonyPostfix]
         [HarmonyPatch(typeof(LightColorGroupEffect), nameof(LightColorGroupEffect.SetColor))]
@@ -310,6 +311,7 @@ namespace ChromaGLS.HarmonyPatches
             // Compare native material interpretation against the custom path at the same strobe phase.
             LogMaterialStrobeState(___lightManager, ___lightId, "native", t, null);
         }
+#endif
 
 #if PRE_V1_37_1
         // DIAGNOSTICS ONLY: inspect post-native renderer colors for matched 1.34.2 samples.
