@@ -49,9 +49,10 @@ namespace ChromaGLS.HarmonyPatches
         private static readonly ConditionalWeakTable<BeatmapEventData, NextEventInBox> _nextEventsInBox
             = new();
 
-        // Bounded diagnostics identify custom-data ownership before changing the 1.29.1 mapping again.
-        // Disabled because per-box list formatting may contribute to slow 1.29.1 map loading.
-        // private static int ConverterDiagnosticCount;
+#if !PRE_V1_37_1
+        // Diagnose whether modern Extend nodes inherit their predecessor's CustomJSONData during conversion.
+        private static int _modernExtensionConversionDiagnosticCount;
+#endif
 
         internal static bool TryGetNextEventInBox(
             BeatmapEventData eventData,
@@ -89,6 +90,14 @@ namespace ChromaGLS.HarmonyPatches
                     : item is ICustomData cd && cd.customData.Count > 0
                         ? cd.customData
                         : null;
+#if !PRE_V1_37_1
+                // A bounded conversion trace distinguishes a missing inheritance handoff from later color-application behavior.
+                if (isExtension && _modernExtensionConversionDiagnosticCount++ < 48)
+                {
+                    bool rawHasColor = item is ICustomData rawData && rawData.customData.ContainsKey("color");
+                    Plugin.Log.Info($"[ChromaGLS converter extension] beat={item.beat:F3} rawColor={rawHasColor} inherited={previousEffectiveCustomData != null} effective={effectiveCustomData != null}");
+                }
+#endif
                 perEventData.Add(effectiveCustomData);
                 previousEffectiveCustomData = effectiveCustomData;
                 anyCustom |= effectiveCustomData != null;

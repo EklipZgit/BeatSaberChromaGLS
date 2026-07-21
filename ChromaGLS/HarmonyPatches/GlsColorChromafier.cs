@@ -30,6 +30,11 @@ namespace ChromaGLS.HarmonyPatches
         // Store the extra strobe RGB track separately because the instance's alternative fields belong to boost colors.
         private static readonly Dictionary<LightColorGroupEffect, StrobeColorState> StrobeColorStates = new();
 
+#if !PRE_V1_37_1
+        // Diagnose whether modern GLS extension nodes are incorrectly taking their endpoint from a later event box.
+        private static int _modernExtensionDiagnosticCount;
+#endif
+
 #if V1_29_1
         private static readonly Dictionary<LightColorGroupEffect, LegacyStrobeState> LegacyStrobeStates = new();
         private static readonly Dictionary<LightColorGroupEffect, LegacyFogState> LegacyFogStates = new();
@@ -438,6 +443,15 @@ namespace ChromaGLS.HarmonyPatches
                 ? ResolveCustomColor(nextEventData!, "color")
                 : fromColor;
             Color? customStrobeColor = ResolveCustomColor(currentEventData, "strobeColor");
+#if !PRE_V1_37_1
+            // A bounded event-time trace verifies that an extension received inherited custom RGB instead of its raw node payload.
+            if (currentEventData.usePreviousValue && _modernExtensionDiagnosticCount++ < 96)
+            {
+                Color? globalNextColor = nextEventData == null ? null : ResolveCustomColor(nextEventData, "color");
+                Color? boxNextColor = nextStrobeEventData == null ? null : ResolveCustomColor(nextStrobeEventData, "color");
+                Plugin.Log.Info($"[ChromaGLS extension] current=({currentEventData.groupId},{currentEventData.elementId},{currentEventData.time:F3}) currentColor={fromColor} currentStrobe={customStrobeColor} tween={hasTween} globalNext=({nextEventData?.groupId},{nextEventData?.elementId},{nextEventData?.time:F3},ease={nextEventData?.easeType},color={globalNextColor}) boxNext=({nextStrobeEventData?.groupId},{nextStrobeEventData?.elementId},{nextStrobeEventData?.time:F3},color={boxNextColor}) fields=from:{fromField},to:{toField}");
+            }
+#endif
 #if V1_29_1
             if (currentEventData is ICustomData legacyData
                 && (legacyData.customData.ContainsKey("cg_sb")
