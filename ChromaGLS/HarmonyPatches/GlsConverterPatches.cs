@@ -5,6 +5,10 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using CustomJSONData.CustomBeatmap;
 using HarmonyLib;
+
+// Version-conditional Harmony patch nesting intentionally places members in this order; the disabled diagnostic marker is retained for context.
+#pragma warning disable SA1201, SA1204, SA1512
+
 #if !PRE_V1_37_1
 using _LightColorBaseData = BeatmapSaveDataVersion3.LightColorBaseData;
 using _LightColorEventBox = BeatmapSaveDataVersion3.LightColorEventBox;
