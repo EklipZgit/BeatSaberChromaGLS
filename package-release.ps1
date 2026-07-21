@@ -6,7 +6,7 @@ Builds BeatMods-ready, per-game release archives for a SemVer plugin release.
 .DESCRIPTION
 Each archive contains exactly Plugins/ChromaGLS.dll. BSIPA embeds the generated
 manifest in that assembly, including the matching plugin version, game version,
-and CustomJSONData dependency. BeatMods receives one archive for each game
+and CustomJSONData/SongCore dependencies. BeatMods receives one archive for each game
 version selected below.
 #>
 param(

@@ -199,7 +199,7 @@ Use a new, final SemVer version for every upload—BeatMods versions cannot be r
 .\package-release.ps1 -Version 1.0.0
 ```
 
-The upload-ready files are written to `dist/` as `ChromaGLS-<version>-bs<game-version>.zip`. Their embedded BSIPA manifest identifies the plugin as `ChromaGLS`, uses the same SemVer version (with the game version as build metadata), and declares `CustomJSONData` as a dependency. Upload the archive matching the Beat Saber version on BeatMods; do not add CustomJSONData, BSIPA, Harmony, PDBs, or any other DLLs to the zip.
+The upload-ready files are written to `dist/` as `ChromaGLS-<version>-bs<game-version>.zip`. Their embedded BSIPA manifest identifies the plugin as `ChromaGLS`, uses the same SemVer version (with the game version as build metadata), and declares `CustomJSONData` and `SongCore` as dependencies. Upload the archive matching the Beat Saber version on BeatMods; do not add CustomJSONData, SongCore, BSIPA, Harmony, PDBs, or any other DLLs to the zip.
 
 In all likelihood you can use the above build steps to target any other version in between and it should work fine there, too, as long as you have CustomJSONData and BSIPA working in that version. Mimicks the same way Heck supports targeting versions before and after 1.37.1's Beat Saber refactor.
 

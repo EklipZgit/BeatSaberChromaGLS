@@ -1,0 +1,18 @@
+* This mod adds Chroma support to all new GLS v3 lighting.
+
+* Works exactly like mappers would expect, they are able to set arbitrary colors as the customData.color, and/or even replace the color of a strobe or strobe-fade that the strobe is fading to.
+
+* ChroMapper first-class support!
+
+* 1.29.1 support: In addition to all the colors, this mod backports strobe light level and strobe fade support to 1.29.1. Replaces unsupported easements in 1.29.1 and 1.34.2 with the most similar supported easement (no more light rotations that sit still in 1.29.1 - an elastic InOutQuad becomes just InOutQuad etc). Brings 1.29.1 close to parity with later game versions for GLS rendering, so now maps using newer features (in environments supported by 1.29.1) will now behave more or less like the mapper expected when they made it for a later game version.
+
+* Extensively tested.
+
+* Does not work with V4 file format currently.
+
+
+
+
+Exactly like Chroma, but for new GLS envs! Adds color and strobeColor support to GLS v3 lighting customData.
+Strobe two colors!
+Backports GLS features to 1.29.1
