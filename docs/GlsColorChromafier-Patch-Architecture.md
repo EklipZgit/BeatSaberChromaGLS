@@ -50,7 +50,13 @@ The `LightColorGroupEffect` fields and final `SetColorForId` call are strongly t
 
 There is no reflection in either production `SetColor` hot path.
 
-For 1.29.1, `PrepareLegacyFogState` discovers the version-specific tube renderer once when an event activates. It creates and caches Harmony's compiled `FieldRef<object, float>` for `_bloomFogIntensityMultiplier`. Per-frame `SetLegacyFogCompensation` performs a dictionary lookup and direct ref assignment without `FieldInfo.GetValue`, `FieldInfo.SetValue`, or boxing.
+#### `PrepareLegacyFogState` (1.29.1 only)
+
+`PrepareLegacyFogState` runs inside `ApplyCustomColors` only during the `HandleColorChangeBeatmapEvent` postfix (`forceNoTweenColor == true`). It executes at most once per `LightColorGroupEffect` instance, because it immediately returns if the instance already has an entry in `LegacyFogStates`. The `Cleanup` postfix removes that entry when the effect is disposed, so the discovery can repeat if the same group object is recycled.
+
+Its purpose is to find the single `TubeBloomPrePassLightWithId` renderer for the light ID and cache a compiled `FieldRef<object, float>` to that renderer's `_tubeBloomPrePassLight._bloomFogIntensityMultiplier` field. The lookups for `LightWithIdManager._lights`, `TubeBloomPrePassLightWithId._tubeBloomPrePassLight`, and the multiplier are also cached in static dictionaries keyed by `Type`, so repeated events for the same renderer type do not re-run `AccessTools.Field`. There is no per-frame reflection or `FieldInfo.GetValue`/`SetValue` in this path.
+
+Per-frame `SetLegacyFogCompensation` (called by `LegacySetColorPrefix`) performs only a `Dictionary` lookup and a direct `FieldRef` assignment to scale the cached base multiplier.
 
 The event-time non-tween `SetColor(0)` call uses `InvokeOriginalSetColor`, a typed Harmony reverse patch, rather than `MethodInfo.Invoke`.
 

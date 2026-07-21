@@ -724,38 +724,73 @@ namespace ChromaGLS.HarmonyPatches
 //         }
 // #endif
 
+        // Cached FieldRef to LightWithIdManager._lights; created once at class initialization.
+        private static readonly AccessTools.FieldRef<object, object> _lightsRef =
+            AccessTools.FieldRefAccess<object>(typeof(LightWithIdManager), "_lights");
+
+        // Cached FieldRefs keyed by runtime renderer Type so repeated events for the same tube type do not re-run AccessTools.Field.
+        private static readonly Dictionary<Type, AccessTools.FieldRef<object, object>> _tubeRefs = new();
+        private static readonly Dictionary<Type, AccessTools.FieldRef<object, float>> _multiplierRefs = new();
+
+        // Discovers and caches the version-specific tube renderer's bloom fog intensity field once per LightColorGroupEffect instance.
+        // Called from ApplyCustomColors only during the HandleColorChangeBeatmapEvent postfix (forceNoTweenColor == true).
+        // Subsequent calls for the same instance are no-ops until Cleanup removes the entry from LegacyFogStates.
         private static void PrepareLegacyFogState(
             LightColorGroupEffect instance,
             object lightManager,
             int lightId)
         {
-            // Event-time reflection discovers the version-specific renderer once; the cached FieldRef is used per frame.
+            // Event-time guard: at most once per effect instance; per-frame work is delegated to SetLegacyFogCompensation.
             if (LegacyFogStates.ContainsKey(instance))
             {
                 return;
             }
 
-            FieldInfo lightsField = lightManager.GetType().GetField("_lights", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (lightsField?.GetValue(lightManager) is not Array lights
-                || lights.GetValue(lightId) is not IEnumerable renderers)
+            object lights = _lightsRef(lightManager);
+            if (lights is not IList list || lightId < 0 || lightId >= list.Count)
+            {
+                return;
+            }
+
+            if (list[lightId] is not IEnumerable renderers)
             {
                 return;
             }
 
             foreach (object renderer in renderers)
             {
-                if (renderer?.GetType().FullName != "TubeBloomPrePassLightWithId")
+                if (renderer == null)
                 {
                     continue;
                 }
 
-                object? tube = renderer.GetType().GetField("_tubeBloomPrePassLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
+                // I don't like this, but it is 1.29.1 only. I don't understand why I have to do it (and it makes me think other levels will have this problem on other types of bloom renderers too...).
+                // But for the life of me I couldn't figure out what other value was wrong in 1.29.1 that was causing such dim bloom only for chroma events.
+                Type rendererType = renderer.GetType();
+                if (rendererType.FullName != "TubeBloomPrePassLightWithId")
+                {
+                    continue;
+                }
+
+                if (!_tubeRefs.TryGetValue(rendererType, out AccessTools.FieldRef<object, object>? tubeRef))
+                {
+                    tubeRef = AccessTools.FieldRefAccess<object>(rendererType, "_tubeBloomPrePassLight");
+                    _tubeRefs.Add(rendererType, tubeRef);
+                }
+
+                object? tube = tubeRef(renderer);
                 if (tube == null)
                 {
                     continue;
                 }
 
-                AccessTools.FieldRef<object, float> multiplierRef = AccessTools.FieldRefAccess<float>(tube.GetType(), "_bloomFogIntensityMultiplier");
+                Type tubeType = tube.GetType();
+                if (!_multiplierRefs.TryGetValue(tubeType, out AccessTools.FieldRef<object, float>? multiplierRef))
+                {
+                    multiplierRef = AccessTools.FieldRefAccess<float>(tubeType, "_bloomFogIntensityMultiplier");
+                    _multiplierRefs.Add(tubeType, multiplierRef);
+                }
+
                 LegacyFogStates.Add(instance, new LegacyFogState(tube, multiplierRef));
                 return;
             }
@@ -983,7 +1018,7 @@ namespace ChromaGLS.HarmonyPatches
         private static Color LerpHdrColor(Color from, Color to, float t)
         {
             float alpha = Mathf.LerpUnclamped(from.a, to.a, t);
-            if (-0.000001f < alpha && alpha < 0.000001f)
+            if (alpha > -0.000001f && alpha < 0.000001f)
             {
                 // Avoid dividing emitted RGB energy by a zero-intensity alpha endpoint.
                 return new Color(
