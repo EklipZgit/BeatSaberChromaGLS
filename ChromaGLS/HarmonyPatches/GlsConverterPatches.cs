@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -68,17 +67,6 @@ namespace ChromaGLS.HarmonyPatches
             return false;
         }
 
-        // Unpack skips base nodes whose calculated beat is at or beyond maxBeat on every supported version.
-        // The emitted-node predicate must be shared with the custom-data mapping or indices drift into later boxes.
-        private static readonly FieldInfo BaseDataListField =
-            typeof(LightColorBeatmapEventDataBox).GetField("_lightColorBaseDataList", BindingFlags.Instance | BindingFlags.NonPublic);
-
-        private static readonly FieldInfo BeatStepField =
-            typeof(LightColorBeatmapEventDataBox).GetField("_beatStep", BindingFlags.Instance | BindingFlags.NonPublic);
-
-        private static readonly FieldInfo BaseDataBeatField =
-            BaseDataListField.FieldType.GetGenericArguments()[0].GetField("beat", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
         // Target the protected LightColorEventBox converter overload explicitly; the base converter also exposes Convert.
         private static void LightColorEventBoxConverterPostfix(
             _LightColorEventBox saveData,
@@ -144,15 +132,14 @@ namespace ChromaGLS.HarmonyPatches
                 return;
             }
 
+            // Main.dll is publicized, so read the same private data directly rather than reflecting every emitted node.
             // Reproduce the game's predicate so custom data follows emitted nodes rather than raw node indices.
-            IList baseData = (IList)BaseDataListField.GetValue(__instance);
-            float beatStep = (float)BeatStepField.GetValue(__instance);
+            IReadOnlyList<LightColorBaseData> baseData = __instance._lightColorBaseDataList;
+            float beatStep = __instance._beatStep;
             List<CustomData?> emittedCustomData = new();
             for (int i = 0; i < baseData.Count; i++)
             {
-                object baseDataItem = baseData[i];
-                float baseBeat = (float)BaseDataBeatField.GetValue(baseDataItem);
-                float beat = groupBoxBeat + baseBeat + (durationOrderIndex * beatStep);
+                float beat = groupBoxBeat + baseData[i].beat + (durationOrderIndex * beatStep);
                 if (beat < maxBeat)
                 {
                     emittedCustomData.Add(perEventData![i]);

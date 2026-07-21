@@ -440,8 +440,8 @@ namespace ChromaGLS.HarmonyPatches
             Color? customStrobeColor = ResolveCustomColor(currentEventData, "strobeColor");
 #if V1_29_1
             if (currentEventData is ICustomData legacyData
-                && (legacyData.customData.ContainsKey("cg_sb") // ChromaGLS_strobeBrightness
-                    || legacyData.customData.ContainsKey("cg_sf"))) // ChromaGLS_strobeFade
+                && (legacyData.customData.ContainsKey("cg_sb")
+                    || legacyData.customData.ContainsKey("cg_sf")))
             {
                 // OEM 1.29.1 nodes still need their backported brightness/fade metadata even without custom colors.
                 // A non-transition node changes the level at its boundary; it is not the endpoint of the current interval's brightness tween.
