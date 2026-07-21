@@ -89,7 +89,9 @@ namespace ChromaGLS.HarmonyPatches
             float strobeBrightness = Mathf.LerpUnclamped(___fromStrobeBrightness, ___toStrobeBrightness, t);
             float duration = ___floatTween.duration;
             float elapsed = t * duration;
-            float elapsedHalf = duration > 0f ? elapsed * elapsed / (2f * duration) : 0f;
+            float elapsedHalf = duration > 0f
+                ? elapsed * elapsed / (2f * duration)
+                : 0f;
             float phase = ((-___fromStrobeFrequency * elapsedHalf) + (___fromStrobeFrequency * elapsed) + (___toStrobeFrequency * elapsedHalf)) % 1f;
             Color strobeColor = Color.LerpUnclamped(strobeFrom, strobeTo, t);
             if (___strobeFade)
@@ -428,16 +430,15 @@ namespace ChromaGLS.HarmonyPatches
             // Use the native event chain for normal color transitions; custom strobe-color endpoints must remain box-local.
             LightColorBeatmapEventData? nextEventData = currentEventData.nextSameTypeEventData as LightColorBeatmapEventData;
             LightColorBeatmapEventData? nextStrobeEventData = FindNextEventInSameBox(currentEventData);
-#if V1_29_1
-            // 1.29.1 uses the upcoming event's transition mode to decide whether this interval interpolates.
-            bool hasTween = nextEventData != null && nextEventData.transitionType == BeatmapEventTransitionType.Interpolate;
-#elif PRE_V1_37_1
-            // 1.34.2 starts a fade only when the upcoming node requests interpolation.
+#if PRE_V1_37_1
+            // 1.29.1 and 1.34.2 start a fade only when the upcoming node requests interpolation.
             bool hasTween = nextEventData != null && nextEventData.transitionType == BeatmapEventTransitionType.Interpolate;
 #else
             bool hasTween = nextEventData != null && nextEventData.easeType != EaseType.None;
 #endif
-            Color? toColor = hasTween ? ResolveCustomColor(nextEventData!, "color") : fromColor;
+            Color? toColor = hasTween
+                ? ResolveCustomColor(nextEventData!, "color")
+                : fromColor;
             Color? customStrobeColor = ResolveCustomColor(currentEventData, "strobeColor");
 #if V1_29_1
             if (currentEventData is ICustomData legacyData
@@ -638,10 +639,12 @@ namespace ChromaGLS.HarmonyPatches
                     : Mathf.LerpUnclamped(state.FromBrightness, state.ToBrightness, outputT);
                 float duration = ___floatTween.duration;
                 float elapsed = outputT * duration;
-                float elapsedHalf = duration > 0f ? elapsed * elapsed / (2f * duration) : 0f;
+                float elapsedHalf = duration > 0f
+                    ? elapsed * elapsed / (2f * duration)
+                    : 0f;
                 // Extension callbacks restart the native tween at t=0, so add the completed predecessor phase to keep cycling continuous.
                 float phase = (state?.PhaseOffset ?? 0f)
-                    + (-___fromStrobeFrequency * elapsedHalf)
+                    - (___fromStrobeFrequency * elapsedHalf)
                     + (___fromStrobeFrequency * elapsed)
                     + (___toStrobeFrequency * elapsedHalf);
                 phase = Mathf.Repeat(phase, 1f);
@@ -904,20 +907,15 @@ namespace ChromaGLS.HarmonyPatches
 
         private sealed class StrobeColorState
         {
-            private Color? _from;
-            private Color? _to;
-            private Color? _normalFrom;
-            private Color? _normalTo;
+            public Color? From { get; private set; }
 
-            public Color? From => _from;
+            public Color? To { get; private set; }
 
-            public Color? To => _to;
+            public Color? NormalFrom { get; private set; }
 
-            public Color? NormalFrom => _normalFrom;
+            public Color? NormalTo { get; private set; }
 
-            public Color? NormalTo => _normalTo;
-
-            public bool HasCustomColor => _from.HasValue || _to.HasValue || _normalFrom.HasValue || _normalTo.HasValue;
+            public bool HasCustomColor => From.HasValue || To.HasValue || NormalFrom.HasValue || NormalTo.HasValue;
 
             public bool HasExplicitStrobeColor { get; private set; }
 
@@ -928,17 +926,17 @@ namespace ChromaGLS.HarmonyPatches
                 Color normalTo,
                 bool hasExplicitStrobeColor)
             {
-                _from = from;
-                _to = to;
-                _normalFrom = normalFrom;
-                _normalTo = normalTo;
+                From = from;
+                To = to;
+                NormalFrom = normalFrom;
+                NormalTo = normalTo;
                 HasExplicitStrobeColor = hasExplicitStrobeColor;
             }
 
             public Color? GetColor(float t, Color normalFrom, Color normalTo)
             {
-                Color from = _from ?? normalFrom;
-                Color to = _to ?? normalTo;
+                Color from = From ?? normalFrom;
+                Color to = To ?? normalTo;
                 return Color.LerpUnclamped(from, to, t);
             }
         }
@@ -985,18 +983,18 @@ namespace ChromaGLS.HarmonyPatches
         private static Color LerpHdrColor(Color from, Color to, float t)
         {
             float alpha = Mathf.LerpUnclamped(from.a, to.a, t);
-            // if (Mathf.Abs(alpha) < 0.000001f)
-            // {
-            //     // Avoid dividing emitted RGB energy by a zero-intensity alpha endpoint.
-            //     return new Color(
-            //         Mathf.LerpUnclamped(from.r, to.r, t),
-            //         Mathf.LerpUnclamped(from.g, to.g, t),
-            //         Mathf.LerpUnclamped(from.b, to.b, t),
-            //         alpha);
-            // }
+            if (-0.000001f < alpha && alpha < 0.000001f)
+            {
+                // Avoid dividing emitted RGB energy by a zero-intensity alpha endpoint.
+                return new Color(
+                    Mathf.LerpUnclamped(from.r, to.r, t),
+                    Mathf.LerpUnclamped(from.g, to.g, t),
+                    Mathf.LerpUnclamped(from.b, to.b, t),
+                    alpha);
+            }
 
             // Fade dim-color energy faster than HDR intensity so white does not linger around a saturated bright peak.
-            float fromWeight = from.a * (1f - t) * (1f - t);
+            float fromWeight = from.a * (1f - t);  //  * (1f - t)
             float toWeight = alpha - fromWeight;
             return new Color(
                 ((from.r * fromWeight) + (to.r * toWeight)) / alpha,
@@ -1020,22 +1018,24 @@ namespace ChromaGLS.HarmonyPatches
 
         private static Color? ResolveCustomColor(LightColorBeatmapEventData eventData, string field)
         {
-            if (eventData is ICustomData customDataEvent)
+            if (eventData is not ICustomData customDataEvent)
             {
-                List<object>? color = customDataEvent.customData.Get<List<object>>(field);
-                if (color == null || color.Count < 3)
-                {
-                    return null;
-                }
-
-                return new Color(
-                    Convert.ToSingle(color[0]),
-                    Convert.ToSingle(color[1]),
-                    Convert.ToSingle(color[2]),
-                    color.Count > 3 ? Convert.ToSingle(color[3]) : 1f);
+                return null;
             }
 
-            return null;
+            List<object>? color = customDataEvent.customData.Get<List<object>>(field);
+            if (color == null || color.Count < 3)
+            {
+                return null;
+            }
+
+            return new Color(
+                Convert.ToSingle(color[0]),
+                Convert.ToSingle(color[1]),
+                Convert.ToSingle(color[2]),
+                color.Count > 3
+                    ? Convert.ToSingle(color[3])
+                    : 1f);
         }
     }
 }
