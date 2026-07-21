@@ -7,7 +7,21 @@ Builds BeatMods-ready, per-game release archives for a SemVer plugin release.
 Each archive contains exactly Plugins/ChromaGLS.dll. BSIPA embeds the generated
 manifest in that assembly, including the matching plugin version, game version,
 and CustomJSONData/SongCore dependencies. BeatMods receives one archive for each game
-version selected below.
+version selected below. The archives are written to dist/ as
+ChromaGLS-<version>-bs<game-version>.zip.
+
+Use a new final SemVer version for every BeatMods upload. Do not add dependencies,
+PDBs, or any other DLLs to the generated archives.
+
+.EXAMPLE
+    .\package-release.ps1 -Version 1.0.0
+
+Builds an archive for every supported game version.
+
+.EXAMPLE
+    .\package-release.ps1 -Version 1.0.0 -GameVersion 1.42.1
+
+Builds only the Beat Saber 1.42.1 archive.
 #>
 param(
     [Parameter(Mandatory)]

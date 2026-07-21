@@ -92,24 +92,13 @@ This easing compatibility patch is compiled only for Beat Saber 1.29.1; newer su
 
 ## How it works
 
-The GLS color data is normally dropped at two points, so ChromaGLS re-inserts it at each:
+ChromaGLS keeps GLS `customData` attached from map deserialization through conversion into runtime light events. It does not replace GLS scheduling, light selection, easing, or brightness behavior.
 
-1. **Deserialization** — `GlsDeserializePatch` prefix-skips CustomJSONData's public
-   `Version3CustomBeatmapSaveData.DeserializeLightColorEventBoxGroupArray` with a verbatim clone of
-   that method plus a single addition: it reads each light-color base event's `customData` and
-   constructs a `LightColorBaseDataSaveData` (which implements CJD's `ICustomData`) instead of a
-   plain `LightColorBaseData`. Everything else in CJD's deserializer pipeline is untouched and still
-   calls into this (patched) method.
+When an event starts, the plugin substitutes only its RGB endpoints. `color` supplies the normal endpoint. `strobeColor`, when present, supplies a separate endpoint for the strobe-on phase. Native GLS still controls the strobe frequency, brightness, fade, and transition timing.
 
-2. **Conversion** — `GlsConverterPatches` postfixes `LightColorEventBoxConverter.Convert` and
-   `LightColorBeatmapEventDataBox.Unpack` (both game types) to carry the `ICustomData` through into
-   `CustomLightColorBeatmapEventData`, using a `ConditionalWeakTable` keyed by the event box. This is the same 
+For transitions, the next event in the same GLS box provides the end color. Extension events inherit the previous event's custom color data, so they continue that event instead of taking color data from a later box.
 
-3. **Application** — `GlsColorChromafier` postfixes `LightColorGroupEffect.HandleColorChangeBeatmapEvent`
-   and rewrites the private `_fromColor` / `_toColor` (+ alternatives) fields, preserving the game's
-   alpha/brightness and replacing only the RGB with the custom color. This is an incredibly clean way to apply color,
-   as it means we get EVERYTHING that GLS does for free (tweening, strobing, fades, propogation, light ids.....), 
-   just with added RGB control - no janky differences in behavior due to replacing some large function with complex behavior.
+On current game versions, the native renderer remains in use except while an explicit `strobeColor` must be selected for the active strobe phase. The 1.29.1 build also backports the newer GLS strobe brightness and fade behavior, including continuous strobe phase across extension events.
 
 
 ### Reading the data in your own mod (dunno why you'd need to but, here you go)
@@ -190,18 +179,6 @@ On a successful build the BSMT `CopyToPlugins` task copies `ChromaGLS.dll` to
 - Beat Saber 1.37.1
 - Beat Saber 1.40.8
 - Beat Saber 1.42.1
-
-## Creating a BeatMods release
-
-Use a new, final SemVer version for every upload—BeatMods versions cannot be replaced. The release helper builds one archive per supported game version and verifies that each contains only the single permitted plugin DLL under `Plugins/`:
-
-```powershell
-.\package-release.ps1 -Version 1.0.0
-```
-
-The upload-ready files are written to `dist/` as `ChromaGLS-<version>-bs<game-version>.zip`. Their embedded BSIPA manifest identifies the plugin as `ChromaGLS`, uses the same SemVer version (with the game version as build metadata), and declares `CustomJSONData` and `SongCore` as dependencies. Upload the archive matching the Beat Saber version on BeatMods; do not add CustomJSONData, SongCore, BSIPA, Harmony, PDBs, or any other DLLs to the zip.
-
-In all likelihood you can use the above build steps to target any other version in between and it should work fine there, too, as long as you have CustomJSONData and BSIPA working in that version. Mimicks the same way Heck supports targeting versions before and after 1.37.1's Beat Saber refactor.
 
 There is a helper powershell script: 
 * `.\build-all-versions.ps1` 
