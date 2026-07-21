@@ -30,7 +30,11 @@ param(
     [string]$Version = $null,
 
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Debug"
+    [string]$Configuration = "Release",
+
+    # The user-facing plugin version. The build task adds the Beat Saber version as SemVer build metadata.
+    [ValidatePattern('^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')]
+    [string]$PluginVersion = "1.0.0"
 )
 
 Set-StrictMode -Version Latest
@@ -101,6 +105,7 @@ foreach ($ver in $versionsToBuild) {
     dotnet build $SlnFile `
         -c $buildConfig `
         "-p:BeatSaberDir=$beatSaberDir" `
+        "-p:Version=$PluginVersion" `
         --nologo
 
     if ($LASTEXITCODE -ne 0) {

@@ -149,7 +149,7 @@ This was specifically engineered to be as unobtrusive to other mods as possible,
 ## Dependencies (as in, you must have these mods installed in your beatsaber folder already)
 
 - `BSIPA` `^4.2.2`
-- `CustomJSONData` `^2.6.3`
+- `CustomJSONData` `^2.5.2` (the 1.29.1 build ships 2.5.2; newer compatible releases also satisfy this range)
 
 ## Prerequisites
 
@@ -190,6 +190,16 @@ On a successful build the BSMT `CopyToPlugins` task copies `ChromaGLS.dll` to
 - Beat Saber 1.37.1
 - Beat Saber 1.40.8
 - Beat Saber 1.42.1
+
+## Creating a BeatMods release
+
+Use a new, final SemVer version for every upload—BeatMods versions cannot be replaced. The release helper builds one archive per supported game version and verifies that each contains only the single permitted plugin DLL under `Plugins/`:
+
+```powershell
+.\package-release.ps1 -Version 1.0.0
+```
+
+The upload-ready files are written to `dist/` as `ChromaGLS-<version>-bs<game-version>.zip`. Their embedded BSIPA manifest identifies the plugin as `ChromaGLS`, uses the same SemVer version (with the game version as build metadata), and declares `CustomJSONData` as a dependency. Upload the archive matching the Beat Saber version on BeatMods; do not add CustomJSONData, BSIPA, Harmony, PDBs, or any other DLLs to the zip.
 
 In all likelihood you can use the above build steps to target any other version in between and it should work fine there, too, as long as you have CustomJSONData and BSIPA working in that version. Mimicks the same way Heck supports targeting versions before and after 1.37.1's Beat Saber refactor.
 

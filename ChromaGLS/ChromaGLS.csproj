@@ -21,11 +21,14 @@
     <PluginId>ChromaGLS</PluginId>
     <PluginName>ChromaGLS</PluginName>
     <Author>EklipZ</Author>
-    <Version>1.0.0</Version>
+    <Authors>EklipZ</Authors>
+    <!-- Pass -p:Version=x.y.z to the release script; keep a valid local-development default. -->
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
     <Description>Standalone plugin that carries beatmap customData colors through the V3 GLS (LightColorGroupEffect) lighting pipeline and applies them as Chroma-style RGB colors. Replicates the CustomJSONData + Heck/Chroma GLS branches without modifying either mod.</Description>
   </PropertyGroup>
   <ItemGroup>
     <DependsOn Include="BSIPA" Version="^4.2.2"/>
+    <!-- 1.29.1 ships CustomJSONData 2.5.2; this lower compatible range lets BSIPA load that build. -->
     <DependsOn Include="CustomJSONData" Version="^2.5.2"/>
   </ItemGroup>
 
