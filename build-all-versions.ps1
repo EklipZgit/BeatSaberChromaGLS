@@ -12,8 +12,8 @@
     version you want to build as an environment variable named
     BEATSABER_<Version> with dots replaced by underscores, e.g.:
 
-        $env:BEATSABER_1_40_8 = "C:\Users\tdrak\BSManager\BSInstances\1.40.8"
-        $env:BEATSABER_1_29_1 = "C:\Users\tdrak\BSManager\BSInstances\1.29.1"
+        $env:BEATSABER_1_40_8 = "C:\Users\{you}\BSManager\BSInstances\1.40.8"
+        $env:BEATSABER_1_29_1 = "C:\Users\{you}\BSManager\BSInstances\1.29.1"
 
     Make sure you have also added the Aeroluna GitHub Packages NuGet source to
     your user-level NuGet.config (see README.md).
@@ -26,7 +26,7 @@
     MSBuild configuration to build: Debug or Release. Defaults to Release.
 #>
 param(
-    [ValidateSet("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1")]
+    [ValidateSet("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1", "1.44.1", "1.44.2")]
     [string]$Version = $null,
 
     [ValidateSet("Debug", "Release")]
@@ -40,7 +40,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$SupportedVersions = @("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1")
+$SupportedVersions = @("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1", "1.44.1", "1.44.2")
 # $SupportedVersions = @("1.29.1", "1.40.8")
 $SlnFile = Join-Path $PSScriptRoot "ChromaGLS.sln"
 
@@ -54,7 +54,14 @@ if (-not (Test-Path $SlnFile)) {
     exit 1
 }
 
-$versionsToBuild = if ($Version) { @($Version) } else { $SupportedVersions }
+$versionsToBuild = if ($Version) { 
+    @($Version) 
+} else { 
+    @(
+        $SupportedVersions | 
+            ? { $_ -ne "1.44.2" }  # 1.44.2 doesn't have most of the necessary dependencies currently, due to api changes breaking them. CJD and BS_Utils appear broken atm
+    ) 
+}
 
 # Validate that all required environment variables are set and point to existing directories.
 $missing = @()
@@ -85,7 +92,7 @@ Set each one to the root of the corresponding Beat Saber install:
 $($missing -join "`n")
 
 Example:
-    `$env:BEATSABER_1_40_8 = 'C:\Users\tdrak\BSManager\BSInstances\1.40.8'
+    `$env:BEATSABER_1_40_8 = 'C:\Users\{you}\BSManager\BSInstances\1.40.8'
 "@
     exit 1
 }

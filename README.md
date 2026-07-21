@@ -177,6 +177,8 @@ On a successful build the BSMT `CopyToPlugins` task copies `ChromaGLS.dll` to
 - Beat Saber 1.37.1
 - Beat Saber 1.40.8
 - Beat Saber 1.42.1
+- Beat Saber 1.44.1
+- Beat Saber 1.44.2
 
 There is a helper powershell script: 
 * `.\build-all-versions.ps1` 
@@ -188,6 +190,8 @@ which will build all versions provided you set the following environment variabl
 [Environment]::SetEnvironmentVariable("BEATSABER_1_37_1", "C:\Users\{you}\BSManager\BSInstances\1.37.1", "User")
 [Environment]::SetEnvironmentVariable("BEATSABER_1_40_8", "C:\Users\{you}\BSManager\BSInstances\1.40.8", "User")
 [Environment]::SetEnvironmentVariable("BEATSABER_1_42_1", "C:\Users\{you}\BSManager\BSInstances\1.42.1", "User")
+[Environment]::SetEnvironmentVariable("BEATSABER_1_44_1", "C:\Users\{you}\BSManager\BSInstances\1.44.1", "User")
+[Environment]::SetEnvironmentVariable("BEATSABER_1_44_2", "C:\Users\{you}\BSManager\BSInstances\1.44.2", "User")
 # don't forget to restart your shell for these to take effect, then
 .\build-all-versions.ps1
 ```

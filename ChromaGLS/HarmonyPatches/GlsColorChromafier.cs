@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using ChromaGLS;
 using CustomJSONData.CustomBeatmap;
 using HarmonyLib;
 using Tweening;
@@ -13,27 +12,17 @@ namespace ChromaGLS.HarmonyPatches
 {
     // Applies Chroma custom colors to GLS (LightColorGroupEffect) events.
     //
-    // Plain-Harmony port of the Heck/Chroma GlsColorChromafier (originally a SiraUtil.Affinity patch).
-    // This plugin does not depend on SiraUtil/Zenject, so it is a static Harmony postfix instead.
-    //
     // Patch strategy:
     //   PRODUCTION, EVENT-TIME: HandleColorChangeBeatmapEvent runs once when a node activates and supplies
     //     currentEventData, which SetData does not receive. Its prefix/postfix stage custom normal/strobe endpoints
     //     around the native SetData call through Harmony ref-field injection.
     //   PRODUCTION, PER-FRAME: SetColor remains native unless an active strobe needs a distinct custom strobeColor,
     //     because normal/strobe phase selection cannot be represented by SetData's static endpoint fields alone.
-    //   DIAGNOSTICS ONLY: bounded logs and renderer reflection are explicitly marked below. They are not required
-    //     for color output and may be removed after behavior is reconfirmed.
     [HarmonyPatch(typeof(LightColorGroupEffect), nameof(LightColorGroupEffect.HandleColorChangeBeatmapEvent))]
     internal static class GlsColorChromafier
     {
         // Store the extra strobe RGB track separately because the instance's alternative fields belong to boost colors.
         private static readonly Dictionary<LightColorGroupEffect, StrobeColorState> StrobeColorStates = new();
-
-#if !PRE_V1_37_1
-        // Diagnose whether modern GLS extension nodes are incorrectly taking their endpoint from a later event box.
-        private static int _modernExtensionDiagnosticCount;
-#endif
 
 #if V1_29_1
         private static readonly Dictionary<LightColorGroupEffect, LegacyStrobeState> LegacyStrobeStates = new();
@@ -59,17 +48,11 @@ namespace ChromaGLS.HarmonyPatches
             LightWithIdManager ____lightManager,
             int ____lightId)
         {
-            // Harmony field injection includes the target field's leading underscore after the three-underscore prefix.
-            Color ___fromColor = ____fromColor;
-            Color ___toColor = ____toColor;
-            float ___fromStrobeFrequency = ____fromStrobeFrequency;
-            float ___toStrobeFrequency = ____toStrobeFrequency;
-            float ___fromStrobeBrightness = ____fromStrobeBrightness;
-            float ___toStrobeBrightness = ____toStrobeBrightness;
-            bool ___strobeFade = ____strobeFade;
-            FloatTween ___floatTween = ____floatTween;
-            LightWithIdManager ___lightManager = ____lightManager;
-            int ___lightId = ____lightId;
+            // Preserve staged strobe rendering verbatim, but let native SetColor own non-strobe light-ID transitions.
+            if (____fromStrobeFrequency <= 0f && ____toStrobeFrequency <= 0f)
+            {
+                return true;
+            }
 
             if (!StrobeColorStates.TryGetValue(__instance, out StrobeColorState? state) || !state.HasExplicitStrobeColor)
             {
@@ -77,40 +60,34 @@ namespace ChromaGLS.HarmonyPatches
                 return true;
             }
 
-            // Preserve staged strobe rendering verbatim, but let native SetColor own non-strobe light-ID transitions.
-            if (___fromStrobeFrequency <= 0f && ___toStrobeFrequency <= 0f)
-            {
-                return true;
-            }
-
             // The active pair follows native boost swaps; external state is needed only for the additional strobe RGB track.
-            Color normalFrom = ___fromColor;
-            Color normalTo = ___toColor;
+            Color normalFrom = ____fromColor;
+            Color normalTo = ____toColor;
             Color strobeFrom = state.From ?? normalFrom;
             Color strobeTo = state.To ?? normalTo;
             Color color = Color.LerpUnclamped(normalFrom, normalTo, t);
-            float strobeBrightness = Mathf.LerpUnclamped(___fromStrobeBrightness, ___toStrobeBrightness, t);
-            float duration = ___floatTween.duration;
+            float strobeBrightness = Mathf.LerpUnclamped(____fromStrobeBrightness, ____toStrobeBrightness, t);
+            float duration = ____floatTween.duration;
             float elapsed = t * duration;
             float elapsedHalf = duration > 0f
                 ? elapsed * elapsed / (2f * duration)
                 : 0f;
-            float phase = ((-___fromStrobeFrequency * elapsedHalf) + (___fromStrobeFrequency * elapsed) + (___toStrobeFrequency * elapsedHalf)) % 1f;
+            float phase = ((-____fromStrobeFrequency * elapsedHalf) + (____fromStrobeFrequency * elapsed) + (____toStrobeFrequency * elapsedHalf)) % 1f;
             Color strobeColor = Color.LerpUnclamped(strobeFrom, strobeTo, t);
-            if (___strobeFade)
+            if (____strobeFade)
             {
                 float fade = InOutCubic(1f - Mathf.Abs((phase * 2f) - 1f));
                 // Alpha is HDR intensity, so interpolate emitted RGB energy instead of independently amplifying mixed RGB.
                 // Without this we end up with a much too bright light tube during RGB transitions (like if we swap this to LerpUnclamped for example)
                 color = LerpHdrColor(color, WithAlpha(strobeColor, strobeBrightness), fade);
             }
-            else if (phase > 0.5f)
+            else if (phase >= 0.5f)
             {
                 color = WithAlpha(strobeColor, strobeBrightness);
             }
 
             // Avoid reflection and boxing in the per-frame custom strobe path.
-            ___lightManager.SetColorForId(___lightId, color);
+            ____lightManager.SetColorForId(____lightId, color);
             return false;
         }
 #endif
@@ -349,35 +326,6 @@ namespace ChromaGLS.HarmonyPatches
 #endif
         }
 
-        // PRODUCTION EVENT-TIME PATH: stage data before native SetData runs inside HandleColorChangeBeatmapEvent.
-        [HarmonyPrefix]
-        private static void Prefix(
-            LightColorGroupEffect __instance,
-            LightColorBeatmapEventData currentEventData,
-            ref Color ____fromColor,
-            ref Color ____toColor,
-            ref Color ____alternativeFromColor,
-            ref Color ____alternativeToColor,
-            LightWithIdManager ____lightManager,
-            int ____lightId,
-            float ____fromStrobeFrequency,
-            float ____toStrobeFrequency)
-        {
-            // Inject private fields once at event time instead of reflecting boxed Color values.
-            ApplyCustomColors(
-                __instance,
-                currentEventData,
-                false,
-                ref ____fromColor,
-                ref ____toColor,
-                ref ____alternativeFromColor,
-                ref ____alternativeToColor,
-                ____lightManager,
-                ____lightId,
-                ____fromStrobeFrequency,
-                ____toStrobeFrequency);
-        }
-
         // PRODUCTION EVENT-TIME PATH: finalize endpoints after native SetData establishes brightness and tween state.
         [HarmonyPostfix]
         private static void Postfix(
@@ -396,7 +344,6 @@ namespace ChromaGLS.HarmonyPatches
             ApplyCustomColors(
                 __instance,
                 currentEventData,
-                true,
                 ref ____fromColor,
                 ref ____toColor,
                 ref ____alternativeFromColor,
@@ -410,7 +357,6 @@ namespace ChromaGLS.HarmonyPatches
         private static void ApplyCustomColors(
             LightColorGroupEffect __instance,
             LightColorBeatmapEventData currentEventData,
-            bool forceNoTweenColor,
             ref Color fromField,
             ref Color toField,
             ref Color alternativeFromField,
@@ -422,10 +368,7 @@ namespace ChromaGLS.HarmonyPatches
         {
 #if V1_29_1
             // Resolve legacy renderer internals once after native event setup instead of reflecting from SetColor every frame.
-            if (forceNoTweenColor)
-            {
-                PrepareLegacyFogState(__instance, lightManager, lightId);
-            }
+            PrepareLegacyFogState(__instance, lightManager, lightId);
 #endif
             Color? fromColor = ResolveCustomColor(currentEventData, "color");
             Color oemFromColor = fromField;
@@ -443,15 +386,15 @@ namespace ChromaGLS.HarmonyPatches
                 ? ResolveCustomColor(nextEventData!, "color")
                 : fromColor;
             Color? customStrobeColor = ResolveCustomColor(currentEventData, "strobeColor");
-#if !PRE_V1_37_1
-            // A bounded event-time trace verifies that an extension received inherited custom RGB instead of its raw node payload.
-            if (currentEventData.usePreviousValue && _modernExtensionDiagnosticCount++ < 96)
-            {
-                Color? globalNextColor = nextEventData == null ? null : ResolveCustomColor(nextEventData, "color");
-                Color? boxNextColor = nextStrobeEventData == null ? null : ResolveCustomColor(nextStrobeEventData, "color");
-                Plugin.Log.Info($"[ChromaGLS extension] current=({currentEventData.groupId},{currentEventData.elementId},{currentEventData.time:F3}) currentColor={fromColor} currentStrobe={customStrobeColor} tween={hasTween} globalNext=({nextEventData?.groupId},{nextEventData?.elementId},{nextEventData?.time:F3},ease={nextEventData?.easeType},color={globalNextColor}) boxNext=({nextStrobeEventData?.groupId},{nextStrobeEventData?.elementId},{nextStrobeEventData?.time:F3},color={boxNextColor}) fields=from:{fromField},to:{toField}");
-            }
-#endif
+// #if false
+//             // A bounded event-time trace verifies that an extension received inherited custom RGB instead of its raw node payload.
+//             if (currentEventData.usePreviousValue && _modernExtensionDiagnosticCount++ < 96)
+//             {
+//                 Color? globalNextColor = nextEventData == null ? null : ResolveCustomColor(nextEventData, "color");
+//                 Color? boxNextColor = nextStrobeEventData == null ? null : ResolveCustomColor(nextStrobeEventData, "color");
+//                 Plugin.Log.Info($"[ChromaGLS extension] current=({currentEventData.groupId},{currentEventData.elementId},{currentEventData.time:F3}) currentColor={fromColor} currentStrobe={customStrobeColor} tween={hasTween} globalNext=({nextEventData?.groupId},{nextEventData?.elementId},{nextEventData?.time:F3},ease={nextEventData?.easeType},color={globalNextColor}) boxNext=({nextStrobeEventData?.groupId},{nextStrobeEventData?.elementId},{nextStrobeEventData?.time:F3},color={boxNextColor}) fields=from:{fromField},to:{toField}");
+//             }
+// #endif
 #if V1_29_1
             if (currentEventData is ICustomData legacyData
                 && (legacyData.customData.ContainsKey("cg_sb")
@@ -497,8 +440,6 @@ namespace ChromaGLS.HarmonyPatches
                     ?? ResolveCustomColor(nextStrobeEventData!, "color")
                     ?? toField
                 : currentStrobeColor;
-            // A strobe endpoint follows the next node's explicit strobeColor, custom color, or native color in that order.
-            Color toStrobeColor = nextCustomStrobeColor ?? currentStrobeColor;
             Color oemToColor = toField;
             // Keep custom RGB, but preserve native brightness alpha for the normal half of each strobe cycle.
             Color normalFromColor = fromColor.HasValue
@@ -546,10 +487,7 @@ namespace ChromaGLS.HarmonyPatches
                     // Without this we would deviate from the out of the box behavior and change to the
                     // next color immediately instead of waiting for its node. The default implementation
                     // sets the color to 0f when there is no tween.
-                    if (forceNoTweenColor && currentEventData.strobeBeatFrequency <= 0)
-                    {
-                        InvokeOriginalSetColor(__instance, 0f);
-                    }
+                    InvokeOriginalSetColor(__instance, 0f);
 
 // #if !PRE_V1_37_1
 //                     // DIAGNOSTICS ONLY: record the endpoints after all custom no-tween mutations have completed.
@@ -575,8 +513,7 @@ namespace ChromaGLS.HarmonyPatches
 
 #if V1_29_1
             // 1.29.1 can defer the first legacy tween frame; explicitly render t=0 so faded strobes do not start already mixed.
-            if (forceNoTweenColor
-                && customStrobeColor.HasValue
+            if (customStrobeColor.HasValue
                 && GetStrobeFade(currentEventData)
                 && currentEventData.strobeBeatFrequency > 0)
             {
@@ -608,33 +545,23 @@ namespace ChromaGLS.HarmonyPatches
             LightWithIdManager ____lightManager,
             int ____lightId)
         {
-            // Harmony field injection includes the target field's leading underscore after the three-underscore prefix.
-            Color ___fromColor = ____fromColor;
-            Color ___toColor = ____toColor;
-            float ___fromStrobeFrequency = ____fromStrobeFrequency;
-            float ___toStrobeFrequency = ____toStrobeFrequency;
-            FloatTween ___floatTween = ____floatTween;
-            LightWithIdManager ___lightManager = ____lightManager;
-            int ___lightId = ____lightId;
-
             StrobeColorStates.TryGetValue(__instance, out StrobeColorState? colorState);
             LegacyStrobeStates.TryGetValue(__instance, out LegacyStrobeState? state);
             // 1.29.1 can defer the first legacy tween update; render that one explicit faded-strobe frame from t=0.
             float outputT = t;
             if (colorState is { HasExplicitStrobeColor: true }
-                && state is { Fade: true }
-                && !state.InitialFrameRendered)
+                && state is { Fade: true, InitialFrameRendered: false })
             {
                 outputT = 0f;
                 state.InitialFrameRendered = true;
             }
 
             // Match the modern path by restoring custom normal-color endpoints instead of lerping stale native fields.
-            Color normalFrom = colorState?.NormalFrom ?? ___fromColor;
-            Color normalTo = colorState?.NormalTo ?? ___toColor;
+            Color normalFrom = colorState?.NormalFrom ?? ____fromColor;
+            Color normalTo = colorState?.NormalTo ?? ____toColor;
             Color color = Color.LerpUnclamped(normalFrom, normalTo, outputT);
 
-            if (___fromStrobeFrequency <= 0f && ___toStrobeFrequency <= 0f)
+            if (____fromStrobeFrequency <= 0f && ____toStrobeFrequency <= 0f)
             {
                 // Native 1.29.1 SetColor already handles non-strobe custom RGB fields and preserves its exact transition timing.
                 SetLegacyFogCompensation(__instance, 1f);
@@ -643,22 +570,22 @@ namespace ChromaGLS.HarmonyPatches
 
             // float diagnosticStrobeBrightness = 0f;
             // // DIAGNOSTICS ONLY: retain maximum tween progress for timing logs.
-            // state?.RecordProgress(t, ___floatTween.duration);
-            if (___fromStrobeFrequency > 0f || ___toStrobeFrequency > 0f)
+            // state?.RecordProgress(t, ____floatTween.duration);
+            if (____fromStrobeFrequency > 0f || ____toStrobeFrequency > 0f)
             {
                 float strobeBrightness = state == null
                     ? 0f
                     : Mathf.LerpUnclamped(state.FromBrightness, state.ToBrightness, outputT);
-                float duration = ___floatTween.duration;
+                float duration = ____floatTween.duration;
                 float elapsed = outputT * duration;
                 float elapsedHalf = duration > 0f
                     ? elapsed * elapsed / (2f * duration)
                     : 0f;
                 // Extension callbacks restart the native tween at t=0, so add the completed predecessor phase to keep cycling continuous.
                 float phase = (state?.PhaseOffset ?? 0f)
-                    - (___fromStrobeFrequency * elapsedHalf)
-                    + (___fromStrobeFrequency * elapsed)
-                    + (___toStrobeFrequency * elapsedHalf);
+                    - (____fromStrobeFrequency * elapsedHalf)
+                    + (____fromStrobeFrequency * elapsed)
+                    + (____toStrobeFrequency * elapsedHalf);
                 phase = Mathf.Repeat(phase, 1f);
 
                 if (state is { Fade: true })
@@ -666,18 +593,18 @@ namespace ChromaGLS.HarmonyPatches
                     float fade = InOutCubic(1f - Mathf.Abs((phase * 2f) - 1f));
                     // Native 1.34.2 strobes reuse normal tween RGB; only explicit strobeColor needs a separate RGB interpolation.
                     Color strobeColor = colorState is { HasExplicitStrobeColor: true }
-                        ? colorState.GetColor(outputT, ___fromColor, ___toColor) ?? color
+                        ? colorState.GetColor(outputT, ____fromColor, ____toColor) ?? color
                         : color;
                     // Explicit strobe RGB needs emitted-energy interpolation so mixed RGB is not amplified by an already-high HDR alpha.
                     color = colorState is { HasExplicitStrobeColor: true }
                         ? LerpHdrColor(color, WithAlpha(strobeColor, strobeBrightness), fade)
                         : Color.LerpUnclamped(color, WithAlpha(strobeColor, strobeBrightness), fade);
                 }
-                else if (phase > 0.5f)
+                else if (phase >= 0.5f)
                 {
                     // Native 1.34.2 strobes reuse normal tween RGB; only explicit strobeColor needs a separate RGB interpolation.
                     Color strobeColor = colorState is { HasExplicitStrobeColor: true }
-                        ? colorState.GetColor(outputT, ___fromColor, ___toColor) ?? color
+                        ? colorState.GetColor(outputT, ____fromColor, ____toColor) ?? color
                         : color;
                     color = WithAlpha(strobeColor, strobeBrightness);
                 }
@@ -685,13 +612,12 @@ namespace ChromaGLS.HarmonyPatches
 
             // The legacy fog path halves both normal and explicit custom-strobe colors, so both halves need the same 2x compensation.
             // Keeping this constant through faded strobes also prevents the custom strobe endpoint from becoming progressively darker.
-            float legacyFogCompensation = colorState is { HasExplicitStrobeColor: true }
-                && (___fromStrobeFrequency > 0f || ___toStrobeFrequency > 0f)
-                    ? 2f
-                    : 1f;
+            float legacyFogCompensation = colorState is { HasExplicitStrobeColor: true } && (____fromStrobeFrequency > 0f || ____toStrobeFrequency > 0f)
+                ? 2f
+                : 1f;
             SetLegacyFogCompensation(__instance, legacyFogCompensation);
             // Avoid reflection, boxing, and an argument-array allocation in the legacy per-frame path.
-            ___lightManager.SetColorForId(___lightId, color);
+            ____lightManager.SetColorForId(____lightId, color);
 
             return false;
         }
@@ -726,7 +652,7 @@ namespace ChromaGLS.HarmonyPatches
 //                     states.Add($"tube(color={tubeColor},bloom={bloomMultiplier})");
 //                     continue;
 //                 }
-
+//
 //                 // Read the disabled diagnostic renderer color without changing its state.
 //                 object? rendererColor = rendererType.GetField("_color", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(renderer);
 //                 states.Add($"{rendererType.FullName ?? rendererType.Name}(color={rendererColor})");
@@ -769,7 +695,6 @@ namespace ChromaGLS.HarmonyPatches
             }
         }
 
-        // PRODUCTION LEGACY HOT PATH: cached state performs a direct field assignment.
         private static void SetLegacyFogCompensation(LightColorGroupEffect instance, float compensation)
         {
             if (LegacyFogStates.TryGetValue(instance, out LegacyFogState? fogState))
@@ -800,11 +725,13 @@ namespace ChromaGLS.HarmonyPatches
         private static LegacyStrobeState GetOrCreateLegacyStrobeState(LightColorGroupEffect instance)
         {
             // Reuse one explicitly cleaned state object per effect with a direct dictionary lookup in SetColor.
-            if (!LegacyStrobeStates.TryGetValue(instance, out LegacyStrobeState? state))
+            if (LegacyStrobeStates.TryGetValue(instance, out LegacyStrobeState? state))
             {
-                state = new LegacyStrobeState();
-                LegacyStrobeStates.Add(instance, state);
+                return state;
             }
+
+            state = new LegacyStrobeState();
+            LegacyStrobeStates.Add(instance, state);
 
             return state;
         }
@@ -858,7 +785,6 @@ namespace ChromaGLS.HarmonyPatches
                 ToFrequency = toFrequency;
                 HasInterval = true;
             }
-
         }
 #endif
 
@@ -920,7 +846,7 @@ namespace ChromaGLS.HarmonyPatches
 
             public Color? NormalTo { get; private set; }
 
-            public bool HasCustomColor => From.HasValue || To.HasValue || NormalFrom.HasValue || NormalTo.HasValue;
+            // public bool HasCustomColor => From.HasValue || To.HasValue || NormalFrom.HasValue || NormalTo.HasValue;
 
             public bool HasExplicitStrobeColor { get; private set; }
 
@@ -988,9 +914,9 @@ namespace ChromaGLS.HarmonyPatches
         private static Color LerpHdrColor(Color from, Color to, float t)
         {
             float alpha = Mathf.LerpUnclamped(from.a, to.a, t);
+            // Avoid divide by zero
             if (alpha > -0.000001f && alpha < 0.000001f)
             {
-                // Avoid dividing emitted RGB energy by a zero-intensity alpha endpoint.
                 return new Color(
                     Mathf.LerpUnclamped(from.r, to.r, t),
                     Mathf.LerpUnclamped(from.g, to.g, t),
