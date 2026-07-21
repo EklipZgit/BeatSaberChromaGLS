@@ -211,8 +211,8 @@ namespace ChromaGLS.HarmonyPatches
                                                 }).Finish(() =>
                                                 {
 #if V1_29_1
-                                                    lightData["__chromaGLS_strobeBrightness"] = strobeBrightness;
-                                                    lightData["__chromaGLS_strobeFade"] = strobeFade;
+                                                    lightData["cg_sb"] = strobeBrightness;
+                                                    lightData["cg_sf"] = strobeFade;
 #endif
                                                     lightColorBaseDataList.Add(new LightColorBaseDataSaveData(
                                                         lightBeat,
