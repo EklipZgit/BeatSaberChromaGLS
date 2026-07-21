@@ -4,7 +4,7 @@ A standalone Beat Saber plugin that carries beatmap `customData` colors through 
 (`LightColorGroupEffect`) lighting pipeline and applies them as Chroma-style RGB colors. It respects everything else GLS does, and simply swaps out the colors GLS is transitioning lights to.
 You have full RGBA control, including per light id.
 
-Demo here: https://www.youtube.com/watch?v=mUhGttjGO9g (see video description for a breakdown of what is demonstrated).
+Demo here: https://youtu.be/3hOmEZGkvDM (I also talk through what is being demonstrated). The map files from the video are in the TestMaps folder in this repo.
 
 
 ## How to use it as a Mapper
@@ -125,20 +125,18 @@ or whatever color helper method you use with ICustomData in your own mod. Exact 
 
 ### Heck / Chroma
 
-It co-exists peacefully with Heck / Chroma and friends without conflict. I actually believe this belongs directly in CustomJSONData and Chroma repos/mods, so I have PRs to CustomJSONData and Heck which if merged would remove the need for this plugin.
-
-- `CustomJSONData` branch `GlsCustomDataAndChroma`
-- `Heck` branch `GlsRgbChroma` (the `Chroma/GlsColorChromafier`)
-
+It co-exists peacefully with Heck / Chroma and friends without conflict. 
 This was specifically engineered to be as unobtrusive to other mods as possible, so at runtime it could only interfere with any other mods which interfere with GLS Color (of which there are none), and it only shims over a small part of CustomJSONData's deserialize pipeline, specifically dealing with GLS nodes.
 
 
 # CONTRIBUTING / BUILDING
 
-## Dependencies (as in, you must have these mods installed in your beatsaber folder already)
+## Dependencies (as in, you must have these mods installed in your beatsaber folder already - this is the minimum version required)
 
 - `BSIPA` `^4.2.2`
-- `CustomJSONData` `^2.5.2` (the 1.29.1 build ships 2.5.2; newer compatible releases also satisfy this range)
+- `CustomJSONData` `^2.5.2`
+- `SongCore` `^3.11.1`
+
 
 ## Prerequisites
 
