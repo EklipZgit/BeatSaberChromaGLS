@@ -1,0 +1,25 @@
+{
+  "_version" : "2.0.0",
+  "_songSampleCount" : 6846845,
+  "_songFrequency" : 48000,
+  "_regions" : [
+    {
+      "_startSampleIndex" : 0,
+      "_endSampleIndex" : 81818,
+      "_startBeat" : 0,
+      "_endBeat" : 5
+    },
+    {
+      "_startSampleIndex" : 81818,
+      "_endSampleIndex" : 96648,
+      "_startBeat" : 5,
+      "_endBeat" : 6
+    },
+    {
+      "_startSampleIndex" : 96648,
+      "_endSampleIndex" : 6846845,
+      "_startBeat" : 6,
+      "_endBeat" : 418.512024
+    }
+  ]
+}

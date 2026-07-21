@@ -1,0 +1,1 @@
+* Add your own song.ogg to these and put them in CustomWIPLevels and playtest the maps after installing the plugin.
