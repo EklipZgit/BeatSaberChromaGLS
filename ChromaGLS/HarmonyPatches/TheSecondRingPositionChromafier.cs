@@ -67,14 +67,20 @@ namespace ChromaGLS.HarmonyPatches
             int eventValueMin,
             int eventValueMax)
         {
+            float? customStep = GetCustomValue(eventData, StepKey);
+            if (customStep.HasValue)
+            {
+                // Custom step replaces The Second's integer i distance without its native integer clamp.
+                return (movementVector * (defaultStep * customStep.Value)) + baseOffset;
+            }
+
             int value = eventData.value;
             if (clampValue)
             {
                 value = Mathf.Clamp(value, eventValueMin, eventValueMax);
             }
 
-            float step = GetCustomValue(eventData, StepKey) ?? defaultStep;
-            return (movementVector * (step * value)) + baseOffset;
+            return (movementVector * (defaultStep * value)) + baseOffset;
         }
 
         private static float? GetCustomValue(BasicBeatmapEventData? eventData, string key)
