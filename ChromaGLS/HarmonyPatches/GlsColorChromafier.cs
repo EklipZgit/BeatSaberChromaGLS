@@ -450,12 +450,29 @@ namespace ChromaGLS.HarmonyPatches
                     ? WithAlpha(toColor.Value, oemToColor.a)
                     : oemToColor
                 : normalFromColor;
+#if V1_29_1
             GetOrCreateStrobeColorState(__instance).Set(
                 currentStrobeColor,
                 nextCustomStrobeColor,
                 normalFromColor,
                 normalToColor,
                 customStrobeColor.HasValue || nextExplicitStrobeColor.HasValue);
+#else
+            // Modern GLS only reads this state for an explicit strobe RGB endpoint, so discard stale state otherwise.
+            if (customStrobeColor.HasValue || nextExplicitStrobeColor.HasValue)
+            {
+                GetOrCreateStrobeColorState(__instance).Set(
+                    currentStrobeColor,
+                    nextCustomStrobeColor,
+                    normalFromColor,
+                    normalToColor,
+                    hasExplicitStrobeColor: true);
+            }
+            else
+            {
+                StrobeColorStates.Remove(__instance);
+            }
+#endif
 // #if V1_29_1
 //             // DIAGNOSTICS ONLY: distinguish stale endpoints from interpolation timing on the test track.
 //             if (currentEventData.groupId == 3
