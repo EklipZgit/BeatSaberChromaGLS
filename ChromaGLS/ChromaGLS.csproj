@@ -22,8 +22,8 @@
     <PluginName>ChromaGLS</PluginName>
     <Author>EklipZ</Author>
     <Authors>EklipZ</Authors>
-    <!-- Pass -p:Version=x.y.z to the release script; keep a valid local-development default. -->
-    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <!-- Increment this fallback for every new release because GitHub Actions builds without an explicit Version property. -->
+    <Version Condition="'$(Version)' == ''">1.0.1</Version>
     <Description>Standalone plugin that carries beatmap customData colors through the V3 GLS (LightColorGroupEffect) lighting pipeline and applies them as Chroma-style RGB colors. Replicates the CustomJSONData + Heck/Chroma GLS branches without modifying either mod.</Description>
   </PropertyGroup>
   <ItemGroup>
