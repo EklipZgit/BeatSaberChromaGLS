@@ -1,4 +1,4 @@
-# Build every supported game target and publish the resulting plugin archives as a dated GitHub Release.
+# Build every supported game target and publish the resulting plugin archives as a dated-and-versioned GitHub Release.
 name: Build and release
 
 on:
@@ -27,7 +27,46 @@ jobs:
   create_release:
     name: Create release
     needs: build
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-    uses: Aeroluna/workflows/.github/workflows/bs-create-release-from-date.yml@main
-    secrets: inherit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Get release identifiers
+        id: release
+        shell: bash
+        run: |
+          # Include the plugin version in the dated tag so multiple releases can be published on one day.
+          version=$(sed -n 's|.*<Version Condition=.*>\([^<]*\)</Version>.*|\1|p' ChromaGLS/ChromaGLS.csproj)
+          test -n "$version"
+          echo "tag=v$(date +'%Y-%m-%d')-$version" >> "$GITHUB_OUTPUT"
+      - name: Create or update tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Keep a stable tag for reruns of the same commit and release version.
+            github.rest.git.createRef({ owner: context.repo.owner, repo: context.repo.repo, ref: 'refs/tags/${{ steps.release.outputs.tag }}', sha: context.sha }).catch(err => {
+              if (err.status !== 422) throw err;
+              github.rest.git.updateRef({ owner: context.repo.owner, repo: context.repo.repo, ref: 'tags/${{ steps.release.outputs.tag }}', sha: context.sha });
+            });
+      - name: Download artifacts
+        id: download_artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Zip artifacts
+        run: |
+          cd '${{ steps.download_artifacts.outputs.download-path }}'
+          for i in */; do (cd "$i"; zip -r "../${i%/}.zip" ./); done
+      - name: Draft release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: '${{ steps.download_artifacts.outputs.download-path }}/*.zip'
+          tag: '${{ steps.release.outputs.tag }}'
+          draft: true
+          allowUpdates: true
+          artifactErrorsFailBuild: true
+          generateReleaseNotes: true
+          removeArtifacts: true
+          updateOnlyUnreleased: true
