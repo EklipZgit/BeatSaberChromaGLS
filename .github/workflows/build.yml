@@ -1,0 +1,33 @@
+# Build every supported game target and publish the resulting plugin archives as a dated GitHub Release.
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build.yml
+      - ChromaGLS/**
+      - ChromaGLS.sln
+      - Directory.Build.targets
+      - NuGet.config
+
+jobs:
+  build:
+    name: Build
+    strategy:
+      matrix:
+        # 1.44.2 is intentionally excluded because its required mod dependencies are not available yet.
+        game-version: [1.29.1, 1.34.2, 1.37.1, 1.40.8, 1.44.1]
+    uses: Aeroluna/workflows/.github/workflows/bs-build-version-release.yml@main
+    with:
+      project-path: ChromaGLS/ChromaGLS.csproj
+      game-version: ${{ matrix.game-version }}
+    secrets: inherit
+
+  create_release:
+    name: Create release
+    needs: build
+    permissions:
+      contents: write
+    uses: Aeroluna/workflows/.github/workflows/bs-create-release-from-date.yml@main
+    secrets: inherit

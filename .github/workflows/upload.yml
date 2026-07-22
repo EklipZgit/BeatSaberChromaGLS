@@ -1,0 +1,16 @@
+# Upload the latest GitHub Release to ChromaGLS's existing BeatMods mod entry on demand.
+name: Upload to BeatMods
+
+on:
+  workflow_dispatch:
+
+jobs:
+  upload:
+    name: Upload
+    uses: Aeroluna/workflows/.github/workflows/bs-upload-release-to-beatmods.yml@main
+    with:
+      # BeatMods assigns ChromaGLS the stable mod ID 450.
+      mods: '{"ChromaGLS": 450}'
+    secrets:
+      # PAT must contain the BeatMods API token used by Aeroluna's uploader.
+      token: ${{ secrets.PAT }}
