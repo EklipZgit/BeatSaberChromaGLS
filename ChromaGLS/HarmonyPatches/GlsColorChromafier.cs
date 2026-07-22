@@ -426,6 +426,7 @@ namespace ChromaGLS.HarmonyPatches
                 if (toColor.HasValue)
                 {
                     ApplyColorWithAlpha(ref toField, toColor.Value);
+                    // Keep custom RGB aligned with the boost endpoint during an approaching transition.
                     ApplyColorWithAlpha(ref alternativeToField, toColor.Value);
                 }
 
@@ -493,17 +494,16 @@ namespace ChromaGLS.HarmonyPatches
             if (fromColor.HasValue)
             {
                 ApplyColorWithAlpha(ref fromField, fromColor.Value);
-                // Custom primary RGB applies to both regular and boost tracks; strobe RGB remains in external state.
+                // Keep custom RGB aligned with the boost endpoint for the current event.
                 ApplyColorWithAlpha(ref alternativeFromField, fromColor.Value);
 
                 if (!hasTween)
                 {
                     // The native handler collapses both endpoint pairs to the current color for an instant node; mirror that with custom RGB.
                     ApplyColorWithAlpha(ref toField, fromColor.Value);
+                    // Keep custom RGB aligned with the boost endpoint for an instant node.
                     ApplyColorWithAlpha(ref alternativeToField, fromColor.Value);
-                    // Without this we would deviate from the out of the box behavior and change to the
-                    // next color immediately instead of waiting for its node. The default implementation
-                    // sets the color to 0f when there is no tween.
+                    // Confirmed after testing: removing this makes instant nodes transition to later colors at the wrong time.
                     InvokeOriginalSetColor(__instance, 0f);
 
 // #if !PRE_V1_37_1
@@ -524,7 +524,7 @@ namespace ChromaGLS.HarmonyPatches
             if (toColor.HasValue)
             {
                 ApplyColorWithAlpha(ref toField, toColor.Value);
-                // Preserve the boost track independently from the external custom strobe RGB track.
+                // Keep custom RGB aligned with the boost endpoint during a transition.
                 ApplyColorWithAlpha(ref alternativeToField, toColor.Value);
             }
 
