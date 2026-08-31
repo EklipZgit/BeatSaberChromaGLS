@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Builds BeatSaberChromaGLS for one or all supported Beat Saber versions.
@@ -22,24 +22,33 @@
     Specific Beat Saber version to build. If omitted, all supported versions
     that have environment variables set are built.
 
-.PARAMETER Configuration
-    MSBuild configuration to build: Debug or Release. Defaults to Release.
+.PARAMETER Release
+    Build Release configurations instead of the default Debug configurations.
+
 #>
 param(
     [ValidateSet("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1", "1.44.1", "1.44.2")]
     [string]$Version = $null,
 
-    [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release",
+    [switch]$Release,
 
-    # The user-facing plugin version. The build task adds the Beat Saber version as SemVer build metadata.
+    # Match the project fallback so local builds cannot numerically downgrade an installed plugin.
+    # The build task adds the Beat Saber version as SemVer build metadata.
     [ValidatePattern('^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')]
-    [string]$PluginVersion = "1.0.0"
+    [string]$PluginVersion = "1.0.3"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Repository-local cleanup keeps queued BSIPA deployments from outranking a later direct multi-version build.
+. (Join-Path $PSScriptRoot "ScriptCommon.ps1")
+
+# Default local builds to Debug; CI and packaging pass -Release explicitly.
+$Configuration = "Debug"
+if ($Release) {
+    $Configuration = "Release"
+}
 $SupportedVersions = @("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1", "1.44.1", "1.44.2")
 # $SupportedVersions = @("1.29.1", "1.40.8")
 $SlnFile = Join-Path $PSScriptRoot "ChromaGLS.sln"
@@ -118,9 +127,24 @@ foreach ($ver in $versionsToBuild) {
     if ($LASTEXITCODE -ne 0) {
         $failedBuilds += $buildConfig
         Write-Host "Build failed for $buildConfig" -ForegroundColor Red
+        Write-Host "Built DLL timestamp: unavailable because the build failed" -ForegroundColor Yellow
     } else {
         $successfulBuilds += $buildConfig
         Write-Host "Build succeeded for $buildConfig" -ForegroundColor Green
+
+        # Report the filesystem timestamp from the exact DLL produced by this configuration.
+        # MSBuild places the target-framework output below the configuration directory.
+        $builtDllPath = Join-Path $PSScriptRoot "ChromaGLS\bin\$buildConfig\net48\ChromaGLS.dll"
+        if (Test-Path $builtDllPath) {
+            $builtDll = Get-Item -LiteralPath $builtDllPath
+            Write-Host "Built DLL: $($builtDll.FullName)" -ForegroundColor Green
+            Write-Host "Built DLL timestamp (UTC): $($builtDll.LastWriteTimeUtc.ToString('O'))" -ForegroundColor Green
+
+            # BSMT has now deployed either live or pending; discard only a pending ChromaGLS older than the live copy.
+            Remove-StaleBsipaPendingPlugin -GameDirectory $beatSaberDir -PluginFileName "ChromaGLS.dll"
+        } else {
+            Write-Host "Built DLL timestamp: unavailable; expected artifact not found at $builtDllPath" -ForegroundColor Yellow
+        }
     }
 }
 

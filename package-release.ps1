@@ -41,7 +41,8 @@ $distDir = Join-Path $PSScriptRoot 'dist'
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 
 foreach ($game in $GameVersion) {
-    & $buildScript -Version $game -Configuration Release -PluginVersion $Version
+    # Release archives must always be produced from Release configurations.
+    & $buildScript -Version $game -Release -PluginVersion $Version
 
     $zipDir = Join-Path $projectDir "bin\\Release-$game\\net48\\zip"
     $sourceZip = Get-ChildItem -Path $zipDir -Filter '*.zip' -File |

@@ -14,7 +14,7 @@ For each light color event, add a `customData` object with a `color` array.
 
 ChroMapper will support this natively in the dev build in the very near future, and will ship to stable build when GLS ships to stable build.
 
-Add `strobeColor` inside the same event's `customData` to choose the RGB color used during the strobe-on phase. It accepts `[r, g, b]` or `[r, g, b, a]`; alpha is ignored. The event's `sb` value controls the strobe light level, and `sf` controls whether the strobe transitions with a fade. If `strobeColor` is omitted, the event's normal `color` is used while strobing.
+Add `strobeColor` inside the same event's `customData` to choose the RGBA color used during the strobe-on phase. It accepts `[r, g, b]` or `[r, g, b, a]`. Its alpha multiplies the event's `sb` strobe light level, while `sf` controls whether the strobe transitions with a fade. If `strobeColor` is omitted, the event's normal `color`, including its alpha, is used while strobing.
 
 ```json
 "lightColorEventBoxGroups": [
@@ -66,16 +66,46 @@ Add `strobeColor` inside the same event's `customData` to choose the RGB color u
 
 ### `color` format
 
-- The `color` value is an array of floats: `[r, g, b]` or `[r, g, b, a]`. Values are in `0.0`–`1.0`.
-- The alpha component is ignored; ChromaGLS preserves the game's brightness/alpha from the normal GLS pipeline.
+- The `color` value is an array of floats: `[r, g, b]` or `[r, g, b, a]`. Components are not clamped; values above `1.0` retain Chroma's HDR color and intensity behavior.
+- `color` alpha multiplies the normal GLS brightness without scaling its RGB components. This preserves independent control over emissive color, fog bloom, and bloom whitening.
 - If `color` is absent, the event uses the default `colorType` (primary/secondary/wave/flash) as usual.
-- `strobeColor` is an optional `[r, g, b]` or `[r, g, b, a]` value used while the event is in its strobe phase. Its alpha is ignored; the strobe brightness comes from the event's `sb` value.
+- `strobeColor` is an optional `[r, g, b]` or `[r, g, b, a]` value used while the event is in its strobe phase. Its alpha multiplies the event's `sb` value; when omitted, the normal `color` RGBA is used.
 - `strobeColor` is supported on Beat Saber 1.29.1 as well as newer supported versions.
+
+### strobeInterval
+
+Add `strobeInterval` inside the event's `customData` to override the native `f` strobe frequency with a continuous beats-per-strobe-cycle value.
+
+- `strobeInterval` is a positive float measured in beats per strobe cycle (e.g. `0.5` = two strobe cycles per beat, `1.0` = one cycle per beat, `2.0` = one cycle every two beats).
+- When present, the runtime strobe frequency is computed from `1 / (strobeInterval * oneBeatDuration)` and replaces the integer `f` frequency.
+- It supports the same transitions as native strobe: if the next same-group event has a `strobeInterval`, the strobe frequency tweens between them. If the next event has no `strobeInterval`, it tweens to/from that event's native `f` value.
+- `strobeInterval` is evaluated when the event starts, not every frame.
+- Use it with `strobeColor`, `sb`, and `sf` to control both the color and timing of a custom strobe.
 
 ### Tweening / transitions
 
 - `fromColor` (the current event's color) is set from the current event's `customData.color`.
 - If the next event in the same light group has a `color`, it is used for `toColor` (the end of the tween).
+
+### Forward-port compatibility
+
+ChromaGLS depends on BeatToTheFuture for V4-to-V3 compatibility and cross-version Chroma ring propagation correction. With **Correct Chroma Ring Prop** enabled, BeatToTheFuture compares the map's original BeatSaver publication date with the Beat Saber 1.42.1 cutoff:
+
+- Pre-1.42.1 games multiply newer maps' `prop`/`_prop` by `1.6666667`.
+- 1.42.1+ games multiply older maps' `prop`/`_prop` by `0.6`.
+- Matching eras, disabled correction, and unknown publication dates are unchanged; on pre-1.42.1 games, WIP maps are assumed to use current ChroMapper behavior and receive `1.6666667`.
+
+Maps authored with the old propagation behavior can override a newer publication date in the selected difficulty (level or beatmap-file custom data is also accepted):
+
+```json
+"_customData": {
+  "_mappedForOldRingPropogationSpeed": true
+}
+```
+
+Use `mappedForOldRingPropogationSpeed` without the leading underscore for the V3 convention. The cutoff and both multipliers are centralized in BeatToTheFuture's `RingPropagationCompatibilityConstants.cs`.
+
+ChromaGLS remains responsible for GLS colors, GLS compatibility, and Chroma ring `customData`, including The Second's precise ring-position controls.
 
 ### Beat Saber 1.29.1 compatibility
 
@@ -94,18 +124,18 @@ This easing compatibility patch is compiled only for Beat Saber 1.29.1; newer su
 
 ChromaGLS keeps GLS `customData` attached from map deserialization through conversion into runtime light events. It does not replace GLS scheduling, light selection, easing, or brightness behavior.
 
-When an event starts, the plugin substitutes only its RGB endpoints. `color` supplies the normal endpoint. `strobeColor`, when present, supplies a separate endpoint for the strobe-on phase. Native GLS still controls the strobe frequency, brightness, fade, and transition timing.
+When an event starts, the plugin composes complete RGBA endpoints. `color` supplies unclamped normal RGB and multiplies native GLS brightness with its alpha. `strobeColor`, when present, supplies unclamped strobe RGB and multiplies `sb` with its alpha. Native GLS still controls strobe frequency, fade, and transition timing.
 
-For transitions, the next event in the same GLS box provides the end color. Extension events inherit the previous event's custom color data, so they continue that event instead of taking color data from a later box.
+For transitions, the next event matching the GLS filter provides the end color. Complete endpoint RGBA values are composed before straight, unclamped interpolation, preserving the distinct effects of HDR RGB and alpha. Extension events inherit the previous event's custom color data, so they act like a clone of the previous event in that filter lane.
 
-On current game versions, the native renderer remains in use except while an explicit `strobeColor` must be selected for the active strobe phase. The 1.29.1 build also backports the newer GLS strobe brightness and fade behavior, including continuous strobe phase across extension events.
+On current game versions, the native renderer remains in use unless an active strobe needs separate custom RGB or alpha handling. The 1.29.1 build also backports the newer GLS strobe brightness and fade behavior, including continuous strobe phase across extension events.
 
 
 ### Reading the data in your own mod (dunno why you'd need to but, here you go)
 
 Because we shim into CustomJSONData's deserialize pipeline, you can access the data just like you'd access any other CustomJSONData data:
 At runtime, cast `LightColorBeatmapEventData` to `CustomJSONData.CustomBeatmap.CustomLightColorBeatmapEventData`
-(or `ICustomData`) and read the color array:
+(or `ICustomData`) and read all four color channels so HDR alpha is not discarded; omitted alpha defaults to `1`:
 
 ```csharp
 if (lightColorEventData is CustomLightColorBeatmapEventData customData)
@@ -116,6 +146,7 @@ if (lightColorEventData is CustomLightColorBeatmapEventData customData)
         float r = Convert.ToSingle(color[0]);
         float g = Convert.ToSingle(color[1]);
         float b = Convert.ToSingle(color[2]);
+        float a = color.Count > 3 ? Convert.ToSingle(color[3]) : 1f;
     }
 }
 ```
@@ -134,6 +165,7 @@ This was specifically engineered to be as unobtrusive to other mods as possible,
 ## Dependencies (as in, you must have these mods installed in your beatsaber folder already - this is the minimum version required)
 
 - `BSIPA` `^4.2.2`
+- `BeatToTheFuture` `^1.0.0`
 - `CustomJSONData` `^2.5.2`
 - `SongCore` `^3.11.1`
 
@@ -193,7 +225,9 @@ which will build all versions provided you set the following environment variabl
 [Environment]::SetEnvironmentVariable("BEATSABER_1_44_1", "C:\Users\{you}\BSManager\BSInstances\1.44.1", "User")
 [Environment]::SetEnvironmentVariable("BEATSABER_1_44_2", "C:\Users\{you}\BSManager\BSInstances\1.44.2", "User")
 # don't forget to restart your shell for these to take effect, then
+# Builds Debug by default; use -Release for Release DLLs.
 .\build-all-versions.ps1
+.\build-all-versions.ps1 -Release
 ```
 
 ## Future plans

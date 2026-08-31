@@ -22,19 +22,27 @@ References:
 
 `Prefix`, `Postfix`, and `ApplyCustomColors` patch `HandleColorChangeBeatmapEvent`.
 
-This handler runs when a GLS node activates and supplies `currentEventData`, including access to Chroma custom JSON and the next-event chains. Native `HandleColorChangeBeatmapEvent` invokes `SetData` internally. The prefix stages data before that native call, and the postfix finalizes RGB while preserving the brightness alpha calculated by native code.
+This handler runs when a GLS node activates and supplies `currentEventData`, including access to Chroma custom JSON and the next-event chains. Native `HandleColorChangeBeatmapEvent` invokes `SetData` internally. The prefix stages data before that native call, and the postfix composes unclamped custom RGB with custom alpha multiplied by the native brightness alpha.
 
 The injected `_fromColor`, `_toColor`, `_alternativeFromColor`, and `_alternativeToColor` fields avoid reflection and boxing. This path does not run once per rendered frame.
+
+### Strobe interval
+
+`ApplyStrobeInterval` runs during the `HandleColorChangeBeatmapEvent` postfix. It resolves `customData.strobeInterval` (beats per strobe cycle) for the current and, when a valid transition exists, the next same-type event. The values are converted to strobe frequency in Hz using `IBpmController.oneBeatDuration` and written to `_fromStrobeFrequency` and `_toStrobeFrequency` so the native per-frame `SetColor` path uses them.
+
+If the next event has no `strobeInterval`, the `to` endpoint is left as the native `strobeBeatFrequency`, producing the same mixed-OEM-strobe transition the game already uses. If the next event has no transition, the `to` endpoint equals the `from` endpoint, matching native `SetData` behavior.
+
+`ResumeStrobeTweenIfNeeded` reactivates `FloatTween` when a custom `strobeInterval` is present but the native handler did not resume the tween because `strobeBeatFrequency` was `0`.
 
 ### Modern per-frame custom strobe selection
 
 `SetColorPrefix` patches `SetColor` for versions after 1.29.1.
 
-It returns immediately and allows native `SetColor` when there is no explicit custom `strobeColor` state or no strobe frequency. Color-only custom strobes therefore remain entirely native. It replaces native execution only when the strobe requires phase-dependent selection between the normal RGB endpoint and a distinct `strobeColor` RGB endpoint.
+It returns immediately and allows native `SetColor` when there is no strobe frequency or custom strobe rendering requirement. It replaces native execution when an explicit `strobeColor` needs separate RGB or when `color`/`strobeColor` alpha must multiply `sb` during the strobe phase.
 
-`_fromColor`/`_toColor` and `_alternativeFromColor`/`_alternativeToColor` remain the native regular/boost pairs. A per-effect `Dictionary<LightColorGroupEffect, StrobeColorState>` stores only the additional strobe RGB track and is cleared by a `Cleanup` postfix. The normal RGB path always reads the active native pair, so `UseBoostColors` remains authoritative.
+`_fromColor`/`_toColor` and `_alternativeFromColor`/`_alternativeToColor` remain the native regular/boost pairs. A per-effect `Dictionary<LightColorGroupEffect, StrobeColorState>` stores the additional raw strobe RGBA endpoints and is cleared by a `Cleanup` postfix. The normal RGBA path always reads the active native pair, so `UseBoostColors` remains authoritative.
 
-`SetData` can stage fixed endpoints, brightness, frequency, and fade values, but cannot express an additional independently interpolated RGB track selected by strobe phase. Removing this prefix therefore requires either changing the runtime data representation or using a narrowly scoped transpiler inside native `SetColor`.
+`SetData` can stage fixed endpoints, brightness, frequency, and fade values, but cannot express an additional independently interpolated RGBA track selected by strobe phase. Each strobe endpoint composes `custom alpha * sb` before straight `Color.LerpUnclamped` interpolation, preserving values above `1.0` and keeping RGB independent from alpha. Removing this prefix therefore requires either changing the runtime data representation or using a narrowly scoped transpiler inside native `SetColor`.
 
 The production calculations and `LightWithIdManager.SetColorForId` call use strongly typed Harmony field injection. They do not use reflection or allocate an invocation argument array. The only recurring state lookup is the direct dictionary lookup needed to obtain the extra strobe track.
 
@@ -80,8 +88,8 @@ Renderer reflection inside these blocks is deliberately retained for diagnosis. 
 A direct `SetData` patch is suitable for values that are fixed when an event activates. It is not currently sufficient as the only patch because:
 
 1. `SetData` does not receive `currentEventData`, so custom JSON and exact event-chain origin would require state passed from `HandleColorChangeBeatmapEvent`.
-2. Normal custom RGB can be represented by `_fromColor` and `_toColor` and is already left to native `SetColor`.
-3. Explicit `strobeColor` requires phase-dependent RGB selection every frame.
+2. Normal custom RGBA can be represented by `_fromColor` and `_toColor` after custom alpha is multiplied into each native brightness endpoint.
+3. Explicit strobe RGB and inherited `color`/`strobeColor` alpha require phase-dependent RGBA selection every frame.
 4. Beat Saber 1.29.1 lacks the modern strobe brightness/fade behavior being backported.
 
-The useful next experiment is therefore not moving all logic to `SetData`. It is isolating whether a small transpiler can replace only native strobe RGB endpoint selection while leaving native `SetColor` phase, fade, brightness, and manager dispatch intact for modern versions.
+The useful next experiment is therefore not moving all logic to `SetData`. It is isolating whether a small transpiler can replace only native strobe RGBA endpoint selection while leaving native `SetColor` phase, fade, brightness, and manager dispatch intact for modern versions.

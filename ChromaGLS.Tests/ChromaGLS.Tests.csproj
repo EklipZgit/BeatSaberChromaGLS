@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Run lifecycle regression tests on a modern host while loading the exact built plugin and Beat Saber assemblies for the selected version. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <Configurations>Release-1.29.1;Release-1.34.2;Release-1.37.1;Release-1.40.8;Release-1.42.1;Release-1.44.1;Release-1.44.2</Configurations>
+  </PropertyGroup>
+
+  <!-- Pin the repository's existing NUnit 3 test stack rather than introducing a second test framework. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="NUnit" Version="3.13.3" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+  </ItemGroup>
+
+  <!-- Load the selected Release plugin and every runtime dependency Harmony may resolve while rescanning its patch classes. -->
+  <ItemGroup>
+    <Reference Include="ChromaGLS" HintPath="..\ChromaGLS\bin\$(Configuration)\net48\ChromaGLS.dll" />
+    <Reference Include="0Harmony" HintPath="$(BeatSaberDir)\Libs\0Harmony.dll" />
+    <Reference Include="BSML" HintPath="$(BeatSaberDir)\Plugins\BSML.dll" />
+    <Reference Include="Colors" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Colors.dll" />
+    <Reference Include="CustomJSONData" HintPath="$(BeatSaberDir)\Plugins\CustomJSONData.dll" />
+    <Reference Include="GameplayCore" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\GameplayCore.dll" />
+    <Reference Include="HMLib" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\HMLib.dll" />
+    <Reference Include="HMRendering" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\HMRendering.dll" />
+    <Reference Include="IPA.Loader" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\IPA.Loader.dll" />
+    <Reference Include="Main" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Main.dll" />
+    <Reference Include="Newtonsoft.Json" HintPath="$(BeatSaberDir)\Libs\Newtonsoft.Json.dll" />
+    <Reference Include="Rendering" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Rendering.dll" />
+    <Reference Include="SiraUtil" HintPath="$(BeatSaberDir)\Plugins\SiraUtil.dll" />
+    <Reference Include="SongCore" HintPath="$(BeatSaberDir)\Plugins\SongCore.dll" />
+    <Reference Include="Tweening" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Tweening.dll" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\UnityEngine.CoreModule.dll" />
+    <Reference Include="Zenject" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Zenject.dll" />
+  </ItemGroup>
+</Project>

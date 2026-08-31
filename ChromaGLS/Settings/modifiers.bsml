@@ -1,0 +1,7 @@
+<bg>
+  <vertical horizontal-fit='PreferredSize' vertical-fit='PreferredSize' preferred-width='90' spacing='0'
+            anchor-max-y='1.35'>
+    <bool-setting text='Enable ChromaGLS' value='enabled' apply-on-change='true'
+                  hover-hint='Enable or disable ChromaGLS custom colors immediately.'/>
+  </vertical>
+</bg>

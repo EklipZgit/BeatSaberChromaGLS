@@ -75,6 +75,8 @@ namespace ChromaGLS.HarmonyPatches
             }
 
             int value = eventData.value;
+
+            // Without customData.step, The Second's i remains exclusively governed by its serialized OEM clamp, including negative and oversized values.
             if (clampValue)
             {
                 value = Mathf.Clamp(value, eventValueMin, eventValueMax);
@@ -85,7 +87,8 @@ namespace ChromaGLS.HarmonyPatches
 
         private static float? GetCustomValue(BasicBeatmapEventData? eventData, string key)
         {
-            return eventData is CustomBasicBeatmapEventData customEvent
+            // CustomJSONData transformations may preserve a basic event through a different ICustomData implementation, so do not require one concrete subclass.
+            return eventData is ICustomData customEvent
                 ? customEvent.customData.Get<float?>(key)
                 : null;
         }
