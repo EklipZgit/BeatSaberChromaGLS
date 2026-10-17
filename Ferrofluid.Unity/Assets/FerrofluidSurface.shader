@@ -275,10 +275,11 @@ Shader "ChromaGLS/FerrofluidSurface"
             if (_SurfaceShapeMode < 0.5)
             {
                 TorusSurface(uv, basePosition, surfaceNormal);
-                return;
             }
-
-            PrimitiveSurface(uv, basePosition, surfaceNormal);
+            else
+            {
+                PrimitiveSurface(uv, basePosition, surfaceNormal);
+            }
         }
 
         // Primitive UV edges meet at mirrored coordinates, not opposite edges as on the torus.

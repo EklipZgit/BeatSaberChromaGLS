@@ -11,8 +11,10 @@ int _ParticleTextureSize;
 
 float2 FerrofluidParticleUv(int index)
 {
-    int y = index / _ParticleTextureSize;
-    int x = index - (y * _ParticleTextureSize);
+    uint textureSize = (uint)_ParticleTextureSize;
+    uint particleIndex = (uint)index;
+    uint y = particleIndex / textureSize;
+    uint x = particleIndex - (y * textureSize);
     return (float2(x, y) + 0.5) / _ParticleTextureSize;
 }
 

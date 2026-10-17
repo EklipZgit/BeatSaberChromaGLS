@@ -69,6 +69,8 @@ namespace ChromaGLS.FerrofluidBundle
             DeleteIfPresent(rootManifestPath);
             DeleteIfPresent(rootManifestPath + ".manifest");
             Debug.Log($"Built ChromaGLS ferrofluid bundle: {outputPath} ({new FileInfo(outputPath).Length} bytes)");
+            // GameCI validates this exact stdout marker even when Unity exits successfully after a custom build method.
+            Console.WriteLine("Build succeeded!");
         }
 
         // Generated manifests are build metadata rather than runtime dependencies, so cleanup is explicit and restricted to files emitted by this bundle invocation.

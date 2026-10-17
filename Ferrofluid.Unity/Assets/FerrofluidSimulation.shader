@@ -428,7 +428,7 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
     float4 FerrofluidPrimitiveCandidates(float2 uv)
     {
         int2 pixel = (int2)floor(uv * _CoarseCandidateTex_TexelSize.zw);
-        int2 cell = pixel / int2(3, 2);
+        int2 cell = (int2)((uint2)pixel / uint2(3u, 2u));
         int2 block = pixel - (cell * int2(3, 2));
         int blockId = block.x + (block.y * 3);
         float2 centerUv = (cell + 0.5) / _CoarseCandidateSize;
@@ -605,9 +605,9 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             int2 cell = min((int2)floor(input.uv * _CoarseCandidateSize), (int)_CoarseCandidateSize - 1);
             int primitiveIds[16];
             [unroll]
-            for (int block = 0; block < 4; block++)
+            for (uint block = 0u; block < 4u; block++)
             {
-                int2 blockPixel = (cell * int2(3, 2)) + int2(block % 3, block / 3);
+                int2 blockPixel = (cell * int2(3, 2)) + int2(block % 3u, block / 3u);
                 float4 ids = tex2Dlod(_CoarseCandidateTex, float4((blockPixel + 0.5) * _CoarseCandidateTex_TexelSize.xy, 0.0, 0.0));
                 [unroll]
                 for (int channel = 0; channel < 4; channel++)
@@ -617,10 +617,10 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             }
 
             [loop]
-            for (int rank = 1; rank < 16; rank++)
+            for (int sortRank = 1; sortRank < 16; sortRank++)
             {
-                int id = primitiveIds[rank];
-                int destination = rank;
+                int id = primitiveIds[sortRank];
+                int destination = sortRank;
                 [loop]
                 while (destination > 0 && id < primitiveIds[destination - 1])
                 {
@@ -632,9 +632,9 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             }
 
             [unroll]
-            for (int rank = 0; rank < 16; rank++)
+            for (int candidateRank = 0; candidateRank < 16; candidateRank++)
             {
-                int id = primitiveIds[rank];
+                int id = primitiveIds[candidateRank];
                 if (id >= 0)
                 {
                     FerrofluidAccumulateHeightParticle(id, position, surfaceMetric, texelSurfacePosition, resultDistance, nearestDistance, secondNearestDistance, nearestSiteParticleUv);
