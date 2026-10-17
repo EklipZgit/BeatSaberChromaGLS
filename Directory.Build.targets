@@ -4,7 +4,8 @@
   <PropertyGroup>
     <DisableZipRelease>false</DisableZipRelease>
   </PropertyGroup>
-  <Target Name="Modified_ZipRelease" AfterTargets="Build" DependsOnTargets="BSMT_AfterBuild;CopyToArtifactDestination" Condition="'$(DefineConstants.Contains(RELEASE))'">
+  <!-- Versioned NUnit projects also define RELEASE but do not import BSMT targets; restricting packaging to ChromaGLS lets regression tests build normally. -->
+  <Target Name="Modified_ZipRelease" AfterTargets="Build" DependsOnTargets="BSMT_AfterBuild;CopyToArtifactDestination" Condition="'$(MSBuildProjectName)' == 'ChromaGLS' And '$(DefineConstants.Contains(RELEASE))'">
     <Message Text="Target: Modified_ZipRelease" Importance="high"/>
     <PropertyGroup>
       <!--Set 'ArtifactName' if it failed before.-->

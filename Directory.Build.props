@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <!-- Versioned configurations resolve their game install from a matching BEATSABER_<version>
+       environment variable, e.g. Debug-1.40.8 reads BEATSABER_1_40_8. This keeps IDE builds working
+       without -p:BeatSaberDir, which command-line builds can still pass to override everything.
+       Non-versioned configurations produce no env var name and leave BeatSaberDir alone. -->
+  <PropertyGroup>
+    <_ConfigGameVersion>$(Configuration.Replace('Debug-', ''))</_ConfigGameVersion>
+    <_ConfigGameVersion>$(_ConfigGameVersion.Replace('Release-', ''))</_ConfigGameVersion>
+    <_BeatSaberDirEnvName>BEATSABER_$(_ConfigGameVersion.Replace('.', '_'))</_BeatSaberDirEnvName>
+    <_BeatSaberDirEnv Condition="'$(_ConfigGameVersion)' != '$(Configuration)'">$([System.Environment]::GetEnvironmentVariable('$(_BeatSaberDirEnvName)'))</_BeatSaberDirEnv>
+    <BeatSaberDir Condition="'$(_BeatSaberDirEnv)' != ''">$(_BeatSaberDirEnv)</BeatSaberDir>
+    <BeatSaberDir Condition="'$(BeatSaberDir)' == ''">$(GameDirectory)</BeatSaberDir>
+  </PropertyGroup>
+
+  <!-- Per-developer overrides live here so machine paths never have to be committed. -->
+  <Import Project="$(MSBuildThisFileDirectory)Directory.Build.props.user" Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.props.user')"/>
+
+  <PropertyGroup>
+    <BeatSaberDir Condition="'$(BeatSaberDir)' == ''">$(GameDirectory)</BeatSaberDir>
+  </PropertyGroup>
+
+  <!-- Configurations is declared inside each csproj, so it can only be checked when the target runs.
+       Projects without versioned configurations (the Unity-generated Ferrofluid projects) skip this. -->
+  <Target Name="BeatSaberGameInstallChecks" BeforeTargets="BeforeBuild" Condition="$(Configurations.Contains('-'))">
+    <Error Condition="'$(_ConfigGameVersion)' == '$(Configuration)'"
+           Text="Configuration '$(Configuration)' does not name a Beat Saber version. Pick a versioned configuration such as Debug-1.40.8 or Release-1.40.8; plain Debug/Release cannot resolve game assemblies. See the README build section."/>
+    <Error Condition="'$(_ConfigGameVersion)' != '$(Configuration)' and '$(BeatSaberDir)' == ''"
+           Text="No Beat Saber $(_ConfigGameVersion) install found. Set the $(_BeatSaberDirEnvName) environment variable to the install folder, or set BeatSaberDir/GameDirectory. See the README build section."/>
+  </Target>
+</Project>

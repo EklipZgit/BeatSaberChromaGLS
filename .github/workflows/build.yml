@@ -2,27 +2,127 @@
 name: Build and release
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
       - .github/workflows/build.yml
       - ChromaGLS/**
+      - ChromaGLS.Tests/**
+      - Ferrofluid.Unity/**
+      - BuildAllVersions.ps1
+      - BuildFerrofluidBundle.ps1
+      - AssertFerrofluidProjectDependencies.ps1
       - ChromaGLS.sln
+      - Directory.Build.props
       - Directory.Build.targets
       - NuGet.config
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
+  build_bundle:
+    name: Build ferrofluid bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check Unity credentials
+        shell: pwsh
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          foreach ($name in 'UNITY_EMAIL', 'UNITY_PASSWORD')
+          {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name)))
+            {
+              throw "Add the $name repository secret under Settings > Secrets and variables > Actions. See the README's Unity Personal license setup."
+            }
+          }
+      - name: Check XR packages
+        shell: pwsh
+        run: |
+          . ./AssertFerrofluidProjectDependencies.ps1
+          Assert-FerrofluidXrPackages -ProjectPath ./Ferrofluid.Unity
+      - name: Cache Unity imports
+        uses: actions/cache@v4
+        with:
+          path: Ferrofluid.Unity/Library
+          key: ferrofluid-windows-${{ runner.os }}-${{ hashFiles('Ferrofluid.Unity/Assets/**', 'Ferrofluid.Unity/SourceTextures/**', 'Ferrofluid.Unity/Packages/**', 'Ferrofluid.Unity/ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: ferrofluid-windows-${{ runner.os }}-
+      - name: Compile ferrofluid shaders and textures
+        uses: game-ci/unity-builder@v6.0.0
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          cliVersion: v0.1.72
+          projectPath: Ferrofluid.Unity
+          unityVersion: auto
+          targetPlatform: StandaloneWindows64
+          buildMethod: ChromaGLS.FerrofluidBundle.BuildFerrofluidBundle.BuildWindows
+          versioning: None
+      - name: Upload ferrofluid bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ferrofluid-bundle
+          path: ChromaGLS/Settings/ferrofluid-windows.bundle
+          if-no-files-found: error
+          retention-days: 7
+
   build:
-    name: Build
+    name: Build ${{ matrix.game-version }}
+    needs: build_bundle
+    runs-on: windows-latest
     strategy:
       matrix:
         # 1.44.x is excluded until Aeroluna's CI reference assemblies support those game versions.
         game-version: [1.29.1, 1.34.2, 1.37.1, 1.40.8, 1.42.1]
-    uses: Aeroluna/workflows/.github/workflows/bs-build-version-release.yml@main
-    with:
-      project-path: ChromaGLS/ChromaGLS.csproj
-      game-version: ${{ matrix.game-version }}
-    secrets: inherit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      # Each matrix runner has its own checkout, so restore the bundle before MSBuild embeds it.
+      - name: Download ferrofluid bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ferrofluid-bundle
+          path: ChromaGLS/Settings
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Add NuGet source
+        shell: pwsh
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet nuget update source "Aeroluna Github Packages" --username "$env:GITHUB_ACTOR" --password "$env:NUGET_AUTH_TOKEN" --store-password-in-clear-text
+      - name: Restore dependencies
+        run: dotnet restore ChromaGLS/ChromaGLS.csproj
+      - name: Initialize modding environment
+        uses: beat-forge/init-beatsaber@v1
+        with:
+          path: ${{ runner.temp }}\BeatSaberReferenceAssemblies
+          version: ${{ matrix.game-version }}
+          repo: Aeroluna/beatsaber-stripped
+      - name: Download Beatmods dependencies
+        uses: Aeroluna/download-beatmods-deps@main
+        with:
+          game-version: ${{ matrix.game-version }}
+          project-path: ChromaGLS/ChromaGLS.csproj
+          project-configuration: Release-${{ matrix.game-version }}
+      - name: Build
+        id: build
+        run: dotnet build ChromaGLS/ChromaGLS.csproj --no-restore -c Release-${{ matrix.game-version }}
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.filename }}
+          path: ${{ steps.build.outputs.artifactpath }}
+          if-no-files-found: error
 
   create_release:
     name: Create release
@@ -55,6 +155,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: ChromaGLS-*
       - name: Zip artifacts
         run: |
           cd '${{ steps.download_artifacts.outputs.download-path }}'

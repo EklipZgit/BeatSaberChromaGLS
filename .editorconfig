@@ -2,7 +2,7 @@
 # Stuff
 dotnet_diagnostic.cs0649.severity = none
 dotnet_diagnostic.sa1633.severity = none
-dotnet_diagnostic.sa1200.severity = none
+dotnet_diagnostic.sa1200.severity = warning
 dotnet_diagnostic.sa1309.severity = none
 dotnet_diagnostic.sa1310.severity = none
 dotnet_diagnostic.sa1101.severity = none
@@ -12,3 +12,20 @@ dotnet_diagnostic.sa1413.severity = none
 dotnet_diagnostic.sa1313.severity = none
 dotnet_diagnostic.sa0001.severity = none
 dotnet_diagnostic.sa1010.severity = none
+
+[*.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_using_directive_placement = outside_namespace:suggestion
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+dotnet_diagnostic.sa1503.severity = none
+dotnet_diagnostic.sa1501.severity = warning
+dotnet_diagnostic.sa1502.severity = warning
+dotnet_diagnostic.sa1116.severity = warning
+dotnet_diagnostic.sa1117.severity = warning

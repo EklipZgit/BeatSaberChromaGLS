@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using CustomJSONData;
 using CustomJSONData.CustomBeatmap;
 using HarmonyLib;
@@ -28,25 +29,12 @@ using _TransitionType = BeatmapSaveDataVersion3.BeatmapSaveData.TransitionType;
 using _SaveData = CustomJSONData.CustomBeatmap.Version3CustomBeatmapSaveData;
 #endif
 
+#pragma warning disable SA1202
+
 namespace ChromaGLS.HarmonyPatches
 {
-    // Prefix-skip replacement for CustomJSONData's public
-    // Version3CustomBeatmapSaveData.DeserializeLightColorEventBoxGroupArray.
-    //
-    // This is a verbatim clone of CJD master's method body, plus the single addition that reads
-    // per-light-color-base-data "customData" and constructs our LightColorBaseDataSaveData
-    // (which implements ICustomData) instead of a plain LightColorBaseData.
-    //
-    // We only clone THIS one public method; the rest of CJD's deserializer pipeline is untouched
-    // and still calls into this (now patched) method. Because the method fills the passed `list`
-    // (a reference type) and we return false, the original never runs and the reader is advanced
-    // identically. This keeps the ICustomData all the way through to CustomLightColorBeatmapEventData
-    // so no time-based color matching is ever needed.
-    //
-    // Constant literals below correspond to CJD's private consts:
-    //   "b" = beat, "g" = groupId, "e" = eventBoxes, "f" = indexFilter,
-    //   "w" = beatDistributionParam, "d" = beatDistributionParamType,
-    //   "c" = colorType, "customData" = customData.
+    // Replace the V3 GLS reader so customData stays attached to each light event through conversion.
+    // Fill the supplied list and advance the reader here because the original parser is skipped.
 #if PRE_V1_37_1
     [HarmonyPatch("CustomJSONData.CustomBeatmap.CustomBeatmapSaveData", "DeserializeLightColorEventBoxGroupArray")]
 #else
@@ -54,6 +42,9 @@ namespace ChromaGLS.HarmonyPatches
 #endif
     internal static class GlsDeserializePatch
     {
+        // Retain box customData until the converter creates the runtime box.
+        private static readonly ConditionalWeakTable<_LightColorEventBox, CustomData> BoxCustomData = new();
+
 #if PRE_V1_37_1
         // Cache the legacy CJD parser delegate because this is called once per event box on the map-loading hot path.
         private static readonly Func<JsonReader, _IndexFilter> DeserializeIndexFilterDelegate = CreateDeserializeIndexFilterDelegate();
@@ -69,12 +60,71 @@ namespace ChromaGLS.HarmonyPatches
         }
 #endif
 
+        internal static bool TryGetBoxCustomData(_LightColorEventBox box, out CustomData? customData)
+        {
+            return BoxCustomData.TryGetValue(box, out customData);
+        }
+
         private static _IndexFilter? DeserializeIndexFilter(JsonReader reader)
         {
 #if PRE_V1_37_1
             return DeserializeIndexFilterDelegate(reader);
 #else
             return _SaveData.DeserializeIndexFilter(reader);
+#endif
+        }
+
+        private static _LightColorBaseData CreateLightColorBaseData(
+            float beat,
+            _TransitionType transitionType,
+            _EnvironmentColorType colorType,
+            float brightness,
+            int strobeBeatFrequency,
+#if !V1_29_1
+            float strobeBrightness,
+            bool strobeFade,
+#endif
+            CustomData? customData)
+        {
+            if (customData == null || customData.Count == 0)
+            {
+#if V1_29_1
+                return new _LightColorBaseData(
+                    beat,
+                    transitionType,
+                    colorType,
+                    brightness,
+                    strobeBeatFrequency);
+#else
+                return new _LightColorBaseData(
+                    beat,
+                    transitionType,
+                    colorType,
+                    brightness,
+                    strobeBeatFrequency,
+                    strobeBrightness,
+                    strobeFade);
+#endif
+            }
+
+#if V1_29_1
+            return new LightColorBaseDataSaveData(
+                beat,
+                transitionType,
+                colorType,
+                brightness,
+                strobeBeatFrequency,
+                customData);
+#else
+            return new LightColorBaseDataSaveData(
+                beat,
+                transitionType,
+                colorType,
+                brightness,
+                strobeBeatFrequency,
+                strobeBrightness,
+                strobeFade,
+                customData);
 #endif
         }
 
@@ -86,7 +136,6 @@ namespace ChromaGLS.HarmonyPatches
                 float beat = default;
                 List<_LightColorEventBox> eventBoxes = new();
                 int groupId = default;
-                CustomData data = new();
                 return reader.ReadObject(objectName =>
                 {
                     switch (objectName)
@@ -110,6 +159,8 @@ namespace ChromaGLS.HarmonyPatches
                                 _DistributionParamType brightnessDistributionParamType = default;
                                 _EaseType brightnessDistributionEaseType = default;
                                 List<_LightColorBaseData> lightColorBaseDataList = new();
+
+                                CustomData? boxData = null;
                                 return reader.ReadObject(eventName =>
                                 {
                                     switch (eventName)
@@ -151,6 +202,12 @@ namespace ChromaGLS.HarmonyPatches
                                                                              brightnessDistributionEaseType;
                                             break;
 
+                                        case "customData":
+                                            // Keep distribution data intact for the converter to parse.
+                                            boxData = new CustomData();
+                                            reader.ReadToDictionary(boxData);
+                                            break;
+
                                         case "e":
                                             reader.ReadArray(() =>
                                             {
@@ -161,7 +218,9 @@ namespace ChromaGLS.HarmonyPatches
                                                 int strobeFrequency = default;
                                                 float strobeBrightness = default;
                                                 bool strobeFade = default;
-                                                CustomData lightData = new();
+
+                                                // Allocate customData only for authored keys or strobe fields backported to 1.29.1.
+                                                CustomData? lightData = null;
                                                 return reader.ReadObject(lightName =>
                                                 {
                                                     switch (lightName)
@@ -201,6 +260,7 @@ namespace ChromaGLS.HarmonyPatches
                                                             break;
 
                                                         case "customData":
+                                                            lightData = new CustomData();
                                                             reader.ReadToDictionary(lightData);
                                                             break;
 
@@ -213,17 +273,20 @@ namespace ChromaGLS.HarmonyPatches
 #if V1_29_1
                                                     if (strobeBrightness > 0)
                                                     {
-                                                        // ChromaGLS_strobeBrightness. Short dict key for perf, since this ends up on tons of nodes.
+                                                        // Backport strobeBrightness to 1.29.1.
+                                                        lightData ??= new CustomData();
                                                         lightData["cg_sb"] = strobeBrightness;
                                                     }
 
                                                     if (strobeFade)
                                                     {
-                                                        // ChromaGLS_strobeFade. Short dict key for perf, since this ends up on tons of nodes.
+                                                        // Backport strobeFade to 1.29.1.
+                                                        lightData ??= new CustomData();
                                                         lightData["cg_sf"] = strobeFade;
                                                     }
 #endif
-                                                    lightColorBaseDataList.Add(new LightColorBaseDataSaveData(
+
+                                                    lightColorBaseDataList.Add(CreateLightColorBaseData(
                                                         lightBeat,
                                                         transitionType,
                                                         colorType,
@@ -242,20 +305,31 @@ namespace ChromaGLS.HarmonyPatches
                                             reader.Skip();
                                             break;
                                     }
-                                }).Finish(() => eventBoxes.Add(new _LightColorEventBox(
-                                    indexFilter,
-                                    beatDistributionParam,
-                                    beatDistributionParamType,
-                                    brightnessDistributionParam,
-                                    brightnessDistributionShouldAffectFirstBaseEvent,
-                                    brightnessDistributionParamType,
-                                    brightnessDistributionEaseType,
-                                    lightColorBaseDataList)));
+                                }).Finish(() =>
+                                {
+                                    _LightColorEventBox eventBox = new(
+                                        indexFilter,
+                                        beatDistributionParam,
+                                        beatDistributionParamType,
+                                        brightnessDistributionParam,
+                                        brightnessDistributionShouldAffectFirstBaseEvent,
+                                        brightnessDistributionParamType,
+                                        brightnessDistributionEaseType,
+                                        lightColorBaseDataList);
+
+                                    if (boxData != null && boxData.Count > 0)
+                                    {
+                                        BoxCustomData.Add(eventBox, boxData);
+                                    }
+
+                                    eventBoxes.Add(eventBox);
+                                });
                             });
                             break;
 
                         case "customData":
-                            reader.ReadToDictionary(data);
+                            // ChromaGLS does not use group-level customData.
+                            reader.Skip();
                             break;
 
                         default:

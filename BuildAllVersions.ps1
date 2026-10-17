@@ -25,6 +25,10 @@
 .PARAMETER Release
     Build Release configurations instead of the default Debug configurations.
 
+.PARAMETER FerrofluidTweaks
+    Compile the session-only ferrofluid tweak menu (FERROFLUID_TWEAKS).
+    Main builds omit it and expose only the four public toggles.
+
 #>
 param(
     [ValidateSet("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1", "1.44.1", "1.44.2")]
@@ -32,10 +36,13 @@ param(
 
     [switch]$Release,
 
+    # FerrofluidTweakMenuHiddenBehindBuildFlag keeps the tweak sliders out of main builds; this switch is the only opt-in.
+    [switch]$FerrofluidTweaks,
+
     # Match the project fallback so local builds cannot numerically downgrade an installed plugin.
     # The build task adds the Beat Saber version as SemVer build metadata.
     [ValidatePattern('^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')]
-    [string]$PluginVersion = "1.0.3"
+    [string]$PluginVersion = "1.0.0"  # stop touching this
 )
 
 Set-StrictMode -Version Latest
@@ -62,6 +69,10 @@ if (-not (Test-Path $SlnFile)) {
     Write-Error "Solution not found: $SlnFile"
     exit 1
 }
+
+# The player cannot compile HLSL, so every supported-version build first guarantees that the embedded GPU ferrofluid bundle matches its authored shaders and source textures.
+# The bundle script throws on failure and uses Start-Process.ExitCode; LASTEXITCODE is unset in a clean -NoProfile session and is not this script's result.
+& (Join-Path $PSScriptRoot "BuildFerrofluidBundle.ps1")
 
 $versionsToBuild = if ($Version) { 
     @($Version) 
@@ -118,11 +129,19 @@ foreach ($ver in $versionsToBuild) {
     Write-Host "=== Building $buildConfig ===" -ForegroundColor Cyan
     Write-Host "BeatSaberDir: $beatSaberDir"
 
-    dotnet build $SlnFile `
-        -c $buildConfig `
-        "-p:BeatSaberDir=$beatSaberDir" `
-        "-p:Version=$PluginVersion" `
-        --nologo
+    $buildArgs = @(
+        $SlnFile,
+        "-c", $buildConfig,
+        "-p:BeatSaberDir=$beatSaberDir",
+        "-p:Version=$PluginVersion",
+        "--nologo"
+    )
+    if ($FerrofluidTweaks) {
+        $buildArgs += "-p:FerrofluidTweaks=true"
+        Write-Host "Ferrofluid tweak menu: ENABLED" -ForegroundColor Yellow
+    }
+
+    dotnet build @buildArgs
 
     if ($LASTEXITCODE -ne 0) {
         $failedBuilds += $buildConfig

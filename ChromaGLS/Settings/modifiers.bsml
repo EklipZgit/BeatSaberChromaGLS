@@ -1,7 +1,128 @@
 <bg>
-  <vertical horizontal-fit='PreferredSize' vertical-fit='PreferredSize' preferred-width='90' spacing='0'
-            anchor-max-y='1.35'>
+  <settings-container child-control-width='true' child-expand-width='true' size-delta-y='-15'>
     <bool-setting text='Enable ChromaGLS' value='enabled' apply-on-change='true'
                   hover-hint='Enable or disable ChromaGLS custom colors immediately.'/>
-  </vertical>
+    <bool-setting text='Enable Ferrofluid Info Button' value='ferrofluid-border-enabled' apply-on-change='true'
+                  hover-hint='Disable to remove the ferrofluid ChromaGLS map indicator around the info button.'/>
+    <bool-setting text='Enable Ferrofluid Cube' value='ferrofluid-cube-enabled' apply-on-change='true'
+                  hover-hint='Enable a cube of ferrofluid on the floor as a fidget toy in the main menu.'/>
+    <bool-setting text='Enable Ferrofluid Sphere' value='ferrofluid-sphere-enabled' apply-on-change='true'
+                  hover-hint='Enable a sphere of ferrofluid on the floor as a fidget toy in the main menu.'/>
+    <bool-setting text='Show ferrofluid torus' value='ferrofluid-body-enabled' apply-on-change='true'
+                  hover-hint='Disable the complete ferrofluid renderer and all simulation passes.'/>
+    <bool-setting text='Show ferrofluid spikes' value='ferrofluid-spikes-enabled' apply-on-change='true'/>
+
+    <slider-setting text='Spike tallness' value='ferrofluid-spike-height-scale' apply-on-change='true' min='0.25' max='4' increment='0.05'
+                    hover-hint='Multiplies rendered spike extrusion without changing magnetic Maximum height. Default 0.9.'/>
+    <slider-setting text='Spike mound curvature' value='ferrofluid-spike-mound-curvature' apply-on-change='true' min='1' max='4' increment='0.05'
+                    hover-hint='Rounds the overall height envelope across neighboring spike tips. Does not reshape individual spikes or change their tilt. 1 keeps the original height response; higher values fill out the mound. Default 2.'/>
+    <slider-setting text='Primitive tip cap rounding' value='ferrofluid-primitive-tip-cap-rounding' apply-on-change='true' min='0' max='1' increment='0.01'
+                    hover-hint='Scales the fixed rounded cap on cube and sphere spike tips. 0 removes the cap and its apex plateau for sharper points; 1 applies the full cap. Default 0.81.'/>
+    <slider-setting text='Primitive tip roundness' value='ferrofluid-primitive-tip-roundness' apply-on-change='true' min='0' max='1' increment='0.01'
+                    hover-hint='Blends primitive tips between a sharp cone and a rounded dome, including magnet-driven spikes. Default 0 adds no dome blend.'/>
+    <slider-setting text='Maximum height' value='maximum-height' apply-on-change='true' min='0.2' max='3' increment='0.01'/>
+    <slider-setting text='Height gain' value='height-gain' apply-on-change='true' min='0' max='4' increment='0.01'/>
+    <slider-setting text='Height falloff exponent' value='height-falloff-exponent' apply-on-change='true' min='0.25' max='8' increment='0.05'/>
+    <slider-setting text='Magnet peak width' value='peak-width' apply-on-change='true' min='0.03' max='1' increment='0.01'
+                    hover-hint='Width of the magnetic response across neighboring spikes, not the rounding of an individual tip. The height dead zone can mask changes near the center.'/>
+    <slider-setting text='Height amount cap' value='magnet-height-strength-cap' apply-on-change='true' min='0' max='1' increment='0.01'
+                    hover-hint='Caps the magnetic height contribution near the torus without capping tilt. Default 0.74.'/>
+    <slider-setting text='Height dead zone' value='magnet-height-dead-zone-radius' apply-on-change='true' min='0' max='0.5' increment='0.005'
+                    hover-hint='Source-space radius that uses the full capped magnetic height. Default 0.13 creates a small center plateau.'/>
+    <slider-setting text='Bulge height' value='bulge-height' apply-on-change='true' min='0' max='0.2' increment='0.005'/>
+    <slider-setting text='Bulge radius' value='bulge-radius' apply-on-change='true' min='0.1' max='3.2' increment='0.01'/>
+    <slider-setting text='Spike height radius' value='ferrofluid-spike-height-radius' apply-on-change='true' min='0.1' max='3.2' increment='0.01'
+                    hover-hint='Radius for magnetic height gain and back flatten on primitives, independent of the supporting bulge. Default 0.31 preserves the current height response.'/>
+    <slider-setting text='Spike tilt radius' value='ferrofluid-spike-tilt-radius' apply-on-change='true' min='0.1' max='3.2' increment='0.01'
+                    hover-hint='Radius for outward lean and return plus dual-magnet direction weights on primitives, independent of the bulge. Default 0.73 restores the wider lean range.'/>
+    <slider-setting text='Spike spring strength' value='ferrofluid-spike-spring-strength' apply-on-change='true' min='1' max='800' increment='5'
+                    hover-hint='Spring pull accelerating actual spike height toward the magnet target. Higher tracks the magnet faster; lower lags further behind.'/>
+    <slider-setting text='Spike spring damping' value='ferrofluid-spike-spring-damping' apply-on-change='true' min='0' max='80' increment='0.5'
+                    hover-hint='Velocity loss that settles the spike spring. Below the critical value spikes overshoot and wobble; above it they approach without overshoot.'/>
+    <slider-setting text='Back flatten' value='back-height-loss' apply-on-change='true' min='0' max='4' increment='0.01'/>
+    <slider-setting text='Back flatten falloff' value='back-height-falloff-exponent' apply-on-change='true' min='0.05' max='8' increment='0.05'
+                    hover-hint='Controls back-facing flattening across the enlarged magnetic radius. Default 2 uses the captured 1.37.1 profile.'/>
+    <slider-setting text='Primitive flatten radius' value='ferrofluid-primitive-flatten-radius' apply-on-change='true' min='0.1' max='2' increment='0.01'
+                    hover-hint='Fraction of the magnetic bulge radius over which away-facing primitive spikes flatten. Default 0.55.'/>
+    <slider-setting text='Primitive flatten exponent' value='ferrofluid-primitive-flatten-exponent' apply-on-change='true' min='0.25' max='6' increment='0.05'
+                    hover-hint='Shapes how away-facing spikes unflatten across the flatten radius; higher keeps them flattened longer then releases sharply. Default 2 matches the previous fixed curve.'/>
+    <slider-setting text='Primitive global flatten' value='ferrofluid-primitive-global-flatten' apply-on-change='true' min='0' max='1' increment='0.01'
+                    hover-hint='Flattens every spike slightly as the main reactive spot grows taller so it stands out against the settled surface. Default 0.3.'/>
+    <slider-setting text='Sphere bulge scale' value='ferrofluid-sphere-bulge-scale' apply-on-change='true' min='0' max='1.5' increment='0.01'
+                    hover-hint='Scales only the sphere reactive support bulge. Default 0.6 bakes the requested 40 percent reduction.'/>
+
+    <slider-setting text='Ferrofluid emission' value='ferrofluid-emission-strength' apply-on-change='true' min='0' max='0.2' increment='0.01'/>
+    <slider-setting text='Ferrofluid exposure' value='ferrofluid-exposure' apply-on-change='true' min='0' max='2' increment='0.01'/>
+    <slider-setting text='LUT table scale' value='ferrofluid-lut-scale' apply-on-change='true' min='0' max='4' increment='0.01'
+                    hover-hint='Scales normalized spike height before the thin-film LUT lookup. Default 3 compresses traversal into the first LUT rows.'/>
+    <slider-setting text='LUT table initial offset' value='ferrofluid-lut-offset' apply-on-change='true' min='-1' max='1' increment='0.01'
+                    hover-hint='Shifts the starting thin-film LUT row. Default 0.07 starts slightly above the source table edge.'/>
+    <slider-setting text='Spike base size' value='ferrofluid-spike-base-size' apply-on-change='true' min='0.5' max='3' increment='0.05'
+                    hover-hint='Widens each spike footprint. Default 2 uses the captured 1.37.1 profile.'/>
+    <slider-setting text='Spike density' value='ferrofluid-spike-density' apply-on-change='true' min='0.25' max='1.5' increment='0.05'
+                    hover-hint='Scales both particle lattice axes and resets the fluid field. Default 0.45 uses the captured 32-by-8 lattice.'/>
+    <slider-setting text='Spike base cutoff' value='ferrofluid-spike-base-cutoff' apply-on-change='true' min='0' max='0.1' increment='0.001'
+                    hover-hint='Suppresses the membrane exactly at spike-cell boundaries while preserving apex height. Default 0.046.'/>
+
+    <slider-setting text='Mass / pressure' value='particle-mass' apply-on-change='true' min='0.01' max='5' increment='0.01'/>
+    <slider-setting text='Density threshold' value='rest-density' apply-on-change='true' min='0.1' max='5' increment='0.05'/>
+    <slider-setting text='Gas constant' value='gas-constant' apply-on-change='true' min='10' max='500' increment='1'/>
+    <slider-setting text='Viscosity' value='viscosity' apply-on-change='true' min='1' max='20' increment='0.1'/>
+    <slider-setting text='Extra simulation steps' value='simulation-steps' apply-on-change='true' min='0' max='6' increment='1'
+                    hover-hint='Additional pressure/force/integration passes per 180 Hz tick. Default 2 means the base pass plus two extra passes.'/>
+
+    <slider-setting text='Magnet radius' value='magnet-radius' apply-on-change='true' min='0.1' max='8' increment='0.1'/>
+    <slider-setting text='Maximum slide' value='magnet-maximum-slide' apply-on-change='true' min='0.1' max='8' increment='0.1'/>
+    <slider-setting text='Slide fraction' value='magnet-slide-fraction' apply-on-change='true' min='0' max='1' increment='0.01'/>
+    <slider-setting text='Slide falloff' value='magnet-slide-falloff-exponent' apply-on-change='true' min='0.25' max='6' increment='0.05'/>
+    <slider-setting text='Elasticity' value='magnet-elasticity' apply-on-change='true' min='4' max='160' increment='1'/>
+    <slider-setting text='Damping' value='magnet-damping' apply-on-change='true' min='2' max='30' increment='0.1'/>
+    <slider-setting text='Magnet forward distance' value='magnet-forward-distance' apply-on-change='true' min='0' max='0.6' increment='0.01'
+                    hover-hint='Source-space gap between the magnetic field point and the cube/sphere surface; smaller values pull the response tighter to the surface. Default 0.09 from the confirmed session.'/>
+
+    <slider-setting text='Maximum tilt' value='maximum-tilt-degrees' apply-on-change='true' min='0' max='85' increment='1'/>
+    <slider-setting text='Tilt peak radius' value='tilt-peak-radius-multiplier' apply-on-change='true' min='0.1' max='1.5' increment='0.01'/>
+    <slider-setting text='Tilt return radius' value='tilt-return-radius-multiplier' apply-on-change='true' min='0.2' max='3' increment='0.01'/>
+    <slider-setting text='Tilt rise exponent' value='tilt-rise-exponent' apply-on-change='true' min='0.25' max='6' increment='0.01'/>
+    <slider-setting text='Tilt return exponent' value='tilt-return-exponent' apply-on-change='true' min='0.25' max='6' increment='0.01'/>
+    <slider-setting text='Inner corner separation' value='inner-corner-fan' apply-on-change='true' min='0' max='1' increment='0.01'/>
+
+    <slider-setting text='Primitive spike size' value='ferrofluid-primitive-spike-size' apply-on-change='true' min='0.3' max='2' increment='0.05'
+                    hover-hint='Scales each primitive cone footprint relative to its cell. Default 0.7 bakes the requested 30 percent reduction.'/>
+    <slider-setting text='Primitive ambient' value='ferrofluid-primitive-ambient-scale' apply-on-change='true' min='0' max='5' increment='0.01'
+                    hover-hint='Scales environment-map ambient on the closed surfaces; 1.0 matches the button ambient and higher values go brighter. Default 0.3 keeps bodies pitch black like the button.'/>
+    <slider-setting text='Cube spike density' value='ferrofluid-cube-spike-density' apply-on-change='true' min='0.5' max='3' increment='0.05'
+                    hover-hint='Multiplies the cube lattice axis on top of shared density. Default 1.6 bakes the requested 60 percent tighter packing.'/>
+    <slider-setting text='Sphere spike density' value='ferrofluid-sphere-spike-density' apply-on-change='true' min='0.5' max='3' increment='0.05'
+                    hover-hint='Multiplies the sphere lattice axis on top of shared density. Default 1.25 bakes the requested 25 percent tighter packing.'/>
+    <slider-setting text='Cube corner roundness' value='ferrofluid-cube-roundness' apply-on-change='true' min='0' max='1' increment='0.01'
+                    hover-hint='Blends the cube between sharp faces and a fully rounded sphere. Default 0.2.'/>
+    <slider-setting text='Cube chart yaw' value='ferrofluid-cube-chart-yaw' apply-on-change='true' min='0' max='90' increment='1'
+                    hover-hint='Rotates the cube spike chart around its up axis in degrees. Default 0 keeps crease arcs off the player-facing diagonal.'/>
+    <slider-setting text='Sphere chart yaw' value='ferrofluid-sphere-chart-yaw' apply-on-change='true' min='0' max='90' increment='1'
+                    hover-hint='Rotates the sphere spike chart around its up axis in degrees. Default 0 keeps crease arcs off the player-facing side.'/>
+
+    <slider-setting text='Surface reflectivity' value='ferrofluid-reflectivity' apply-on-change='true' min='0' max='1' increment='0.01'
+                    hover-hint='0 keeps the captured matte shading; 1 gives the surface an oily water-like gloss with view-dependent environment reflections and a tight specular highlight. Default 0.75.'/>
+    <slider-setting text='Matte sheen' value='ferrofluid-matte-sheen' apply-on-change='true' min='0' max='1' increment='0.01'
+                    hover-hint='Strength of the matte rim wash and specular highlight (tinted deep blue). 0 removes them so only the oily reflection remains. Default 1.'/>
+    <slider-setting text='Matte angle' value='ferrofluid-matte-angle' apply-on-change='true' min='0' max='90' increment='0.5'
+                    hover-hint='Degrees of surface covered by the matte sheen measured inward from silhouettes; 0 removes the rim and 90 washes the whole surface. Default 10.'/>
+    <slider-setting text='Reflection angle' value='ferrofluid-reflection-angle' apply-on-change='true' min='0' max='90' increment='0.5'
+                    hover-hint='Degrees of surface covered by the oily environment reflection measured inward from silhouettes; 0 removes it and 90 mirrors the whole surface including the torus band. Default 15.'/>
+
+    <slider-setting text='Matte light yaw' value='ferrofluid-matte-rotation-y' apply-on-change='true' min='0' max='360' increment='1'
+                    hover-hint='Rotates the matte/specular light direction around the vertical axis. Default 0.'/>
+    <slider-setting text='Matte light pitch' value='ferrofluid-matte-rotation-x' apply-on-change='true' min='0' max='360' increment='1'
+                    hover-hint='Rotates the matte/specular light direction around the horizontal axis. Default 0.'/>
+    <slider-setting text='Matte light roll' value='ferrofluid-matte-rotation-z' apply-on-change='true' min='0' max='360' increment='1'
+                    hover-hint='Rotates the matte/specular light direction around the view axis. Default 0.'/>
+    <slider-setting text='Reflection yaw' value='ferrofluid-reflection-rotation-y' apply-on-change='true' min='0' max='360' increment='1'
+                    hover-hint='Rotates which env-map region the oily reflection samples, around the vertical axis. Default 0.'/>
+    <slider-setting text='Reflection pitch' value='ferrofluid-reflection-rotation-x' apply-on-change='true' min='0' max='360' increment='1'
+                    hover-hint='Rotates which env-map region the oily reflection samples, around the horizontal axis. Default 0.'/>
+    <slider-setting text='Reflection roll' value='ferrofluid-reflection-rotation-z' apply-on-change='true' min='0' max='360' increment='1'
+                    hover-hint='Rotates which env-map region the oily reflection samples, around the view axis. Default 0.'/>
+  </settings-container>
+  <horizontal id='ferrofluid-preview-anchor' preferred-width='1' preferred-height='1'/>
 </bg>

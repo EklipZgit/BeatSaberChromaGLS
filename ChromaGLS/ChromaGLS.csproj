@@ -17,26 +17,33 @@
     <DefineConstants>PRE_V1_37_1</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)'=='Debug-1.29.1' Or '$(Configuration)'=='Release-1.29.1' Or '$(Configuration)'=='Debug-1.34.2' Or '$(Configuration)'=='Release-1.34.2' Or '$(Configuration)'=='Debug-1.37.1' Or '$(Configuration)'=='Release-1.37.1'">
+    <DefineConstants>$(DefineConstants);PRE_V1_40_8</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Build with -p:FerrofluidTweaks=true to show the session-only tuning controls. -->
+  <PropertyGroup>
+    <FerrofluidTweaks Condition="'$(FerrofluidTweaks)' == ''">false</FerrofluidTweaks>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(FerrofluidTweaks)' == 'true'">
+    <DefineConstants>$(DefineConstants);FERROFLUID_TWEAKS</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup>
     <PluginId>ChromaGLS</PluginId>
     <PluginName>ChromaGLS</PluginName>
     <Author>EklipZ</Author>
     <Authors>EklipZ</Authors>
-    <!-- Increment this fallback for every new release because GitHub Actions builds without an explicit Version property. -->
-    <Version Condition="'$(Version)' == ''">1.0.3</Version>
+    <!-- GitHub Actions uses this version for the generated plugin manifest and release tag. Don't update this unless we're ready to ship a new version on github. -->
+    <Version Condition="'$(Version)' == ''">1.1.0</Version>
     <Description>Standalone plugin that carries beatmap customData colors through the V3 GLS (LightColorGroupEffect) lighting pipeline and applies them as Chroma-style RGB colors. Replicates the CustomJSONData + Heck/Chroma GLS branches without modifying either mod.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <!-- BSML renders the in-game GameplaySetup tab used for the persisted ChromaGLS toggle. -->
     <DependsOn Include="BeatSaberMarkupLanguage" Version="^1.5.9"/>
-    <!-- BeatToTheFuture owns general V4-to-V3 compatibility; require its first public 1.0 API line. -->
     <DependsOn Include="BeatToTheFuture" Version="^1.0.0"/>
     <DependsOn Include="BSIPA" Version="^4.2.2"/>
-    <!-- 1.29.1 ships CustomJSONData 2.5.2; this lower compatible range lets BSIPA load that build. -->
     <DependsOn Include="CustomJSONData" Version="^2.5.2"/>
-    <!-- SiraUtil supplies the menu-scene Zenject installation point used to register the BSML tab. -->
     <DependsOn Include="SiraUtil" Version="^3.0.5"/>
-    <!-- SongCore 3.11.1 is the oldest supported installation and owns the requirement-capability registry. -->
     <DependsOn Include="SongCore" Version="^3.11.1"/>
   </ItemGroup>
 
@@ -44,36 +51,43 @@
     <Reference Private="False"/>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <Reference Include="System.Net.Http"/>
     <Reference Include="0Harmony" HintPath="$(BeatSaberDir)\Libs\0Harmony.dll"/>
     <Reference Include="BeatmapCore" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\BeatmapCore.dll" Publicize="true"/>
+    <Reference Include="BGLib.AppFlow" Condition="Exists('$(BeatSaberDir)\Beat Saber_Data\Managed\BGLib.AppFlow.dll')" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\BGLib.AppFlow.dll"/>
     <Reference Include="Colors" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Colors.dll" Publicize="true"/>
     <Reference Include="CustomJSONData" HintPath="$(BeatSaberDir)\Plugins\CustomJSONData.dll"/>
     <Reference Include="DataModels" Condition="Exists('$(BeatSaberDir)\Beat Saber_Data\Managed\DataModels.dll')" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\DataModels.dll" Publicize="true"/>
     <Reference Include="GameplayCore" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\GameplayCore.dll"/>
     <Reference Include="HMLib" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\HMLib.dll"/>
+    <Reference Include="BeatSaber.ViewSystem" Condition="Exists('$(BeatSaberDir)\Beat Saber_Data\Managed\BeatSaber.ViewSystem.dll')" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\BeatSaber.ViewSystem.dll"/>
+    <Reference Include="HMUI" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\HMUI.dll"/>
     <Reference Include="HMRendering" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\HMRendering.dll" Publicize="true"/>
     <Reference Include="IPA.Loader" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\IPA.Loader.dll"/>
     <Reference Include="Main" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Main.dll" Publicize="true"/>
     <Reference Include="Newtonsoft.Json" HintPath="$(BeatSaberDir)\Libs\Newtonsoft.Json.dll"/>
     <Reference Include="Rendering" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Rendering.dll" Publicize="true"/>
-    <!-- BSML and SiraUtil are runtime dependencies of the in-game settings tab, not bundled assemblies. -->
     <Reference Include="BSML" HintPath="$(BeatSaberDir)\Plugins\BSML.dll"/>
     <Reference Include="SiraUtil" HintPath="$(BeatSaberDir)\Plugins\SiraUtil.dll"/>
     <Reference Include="SongCore" HintPath="$(BeatSaberDir)\Plugins\SongCore.dll"/>
     <Reference Include="Tweening" Condition="Exists('$(BeatSaberDir)\Beat Saber_Data\Managed\Tweening.dll')" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Tweening.dll"/>
     <Reference Include="UnityEngine.CoreModule" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\UnityEngine.CoreModule.dll"/>
-    <!-- Zenject contains the installer and lifecycle interfaces used by the menu binding. -->
+    <Reference Include="UnityEngine.AssetBundleModule" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\UnityEngine.AssetBundleModule.dll"/>
+    <!-- Canvas and UIVertex UV2 support for curved Beat Saber menus requires both modules. -->
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\UnityEngine.TextRenderingModule.dll"/>
+    <Reference Include="UnityEngine.UIModule" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\UnityEngine.UIModule.dll"/>
+    <Reference Include="Unity.TextMeshPro" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Unity.TextMeshPro.dll"/>
+    <Reference Include="UnityEngine.UI" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\UnityEngine.UI.dll"/>
+    <Reference Include="VRUI" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\VRUI.dll"/>
     <Reference Include="Zenject" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Zenject.dll"/>
+    <Reference Include="Zenject-usage" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Zenject-usage.dll"/>
   </ItemGroup>
 
   <ItemGroup>
-    <!-- This legacy experiment is intentionally retained as source text but contains only commented-out code. -->
-    <Compile Remove="HarmonyPatches\RingRotationStartChromafier.cs"/>
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Embed the BSML view so the settings tab is available from the built plugin without external files. -->
     <EmbeddedResource Include="Settings\modifiers.bsml"/>
+    <EmbeddedResource Include="Settings\modifiers-minimal.bsml"/>
+    <EmbeddedResource Include="Updates\update-banner.bsml"/>
+    <EmbeddedResource Include="Settings\ferrofluid-windows.bundle"/>
   </ItemGroup>
 
   <ItemGroup>
@@ -81,5 +95,9 @@
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.*"/>
     <PackageReference Include="LunaBSMod.Tasks" Version="1.1.0"/>
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.354"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="stylecop.json" />
   </ItemGroup>
 </Project>

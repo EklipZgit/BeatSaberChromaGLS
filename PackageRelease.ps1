@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 <#
 .SYNOPSIS
 Builds BeatMods-ready, per-game release archives for a SemVer plugin release.
@@ -14,12 +14,12 @@ Use a new final SemVer version for every BeatMods upload. Do not add dependencie
 PDBs, or any other DLLs to the generated archives.
 
 .EXAMPLE
-    .\package-release.ps1 -Version 1.0.0
+    .\PackageRelease.ps1 -Version 1.0.0
 
 Builds an archive for every supported game version.
 
 .EXAMPLE
-    .\package-release.ps1 -Version 1.0.0 -GameVersion 1.42.1
+    .\PackageRelease.ps1 -Version 1.0.0 -GameVersion 1.42.1
 
 Builds only the Beat Saber 1.42.1 archive.
 #>
@@ -35,7 +35,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$buildScript = Join-Path $PSScriptRoot 'build-all-versions.ps1'
+$buildScript = Join-Path $PSScriptRoot 'BuildAllVersions.ps1'
 $projectDir = Join-Path $PSScriptRoot 'ChromaGLS'
 $distDir = Join-Path $PSScriptRoot 'dist'
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null

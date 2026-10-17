@@ -1,39 +1,56 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Run lifecycle regression tests on a modern host while loading the exact built plugin and Beat Saber assemblies for the selected version. -->
+  <!-- Tests run under Unity's bundled Mono (the game's real runtime): the game's MonoMod.RuntimeDetour
+       crashes the net8 CLR and desktop net48 cannot load CustomJSONData's default interface members.
+       The project is a self-running NUnitLite exe; build with dotnet build and run it with mono.exe. -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <IsTestProject>true</IsTestProject>
     <IsPackable>false</IsPackable>
-    <Configurations>Release-1.29.1;Release-1.34.2;Release-1.37.1;Release-1.40.8;Release-1.42.1;Release-1.44.1;Release-1.44.2</Configurations>
+    <Configurations>Debug-1.29.1;Release-1.29.1;Debug-1.34.2;Release-1.34.2;Debug-1.37.1;Release-1.37.1;Debug-1.40.8;Release-1.40.8;Debug-1.42.1;Release-1.42.1;Debug-1.44.1;Release-1.44.1;Debug-1.44.2;Release-1.44.2</Configurations>
   </PropertyGroup>
 
-  <!-- Pin the repository's existing NUnit 3 test stack rather than introducing a second test framework. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="NUnit" Version="3.13.3" />
-    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageReference Include="NUnitLite" Version="3.13.3" />
+    <!-- DispatchProxy ships outside the net48 BCL, so the easing-test interface proxies need the compat package. -->
+    <PackageReference Include="System.Reflection.DispatchProxy" Version="4.7.1" />
   </ItemGroup>
 
   <!-- Load the selected Release plugin and every runtime dependency Harmony may resolve while rescanning its patch classes. -->
   <ItemGroup>
+    <Reference Include="System.Net.Http" />
     <Reference Include="ChromaGLS" HintPath="..\ChromaGLS\bin\$(Configuration)\net48\ChromaGLS.dll" />
     <Reference Include="0Harmony" HintPath="$(BeatSaberDir)\Libs\0Harmony.dll" />
     <Reference Include="BSML" HintPath="$(BeatSaberDir)\Plugins\BSML.dll" />
     <Reference Include="Colors" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Colors.dll" />
     <Reference Include="CustomJSONData" HintPath="$(BeatSaberDir)\Plugins\CustomJSONData.dll" />
     <Reference Include="GameplayCore" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\GameplayCore.dll" />
+    <Reference Include="Hive.Versioning" HintPath="$(BeatSaberDir)\Libs\Hive.Versioning.dll" />
     <Reference Include="HMLib" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\HMLib.dll" />
     <Reference Include="HMRendering" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\HMRendering.dll" />
+    <Reference Include="IPA.Injector" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\IPA.Injector.dll" />
     <Reference Include="IPA.Loader" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\IPA.Loader.dll" />
     <Reference Include="Main" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Main.dll" />
     <Reference Include="Newtonsoft.Json" HintPath="$(BeatSaberDir)\Libs\Newtonsoft.Json.dll" />
+    <!-- The game's managed netstandard 2.1 facade matches the plugin and Unity assemblies; Libs carries the older 2.0 facade that breaks GPU helper type initialization under Mono. -->
+    <Reference Include="netstandard" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\netstandard.dll" />
     <Reference Include="Rendering" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Rendering.dll" />
+    <Reference Include="SemVer" HintPath="$(BeatSaberDir)\Libs\SemVer.dll" />
     <Reference Include="SiraUtil" HintPath="$(BeatSaberDir)\Plugins\SiraUtil.dll" />
     <Reference Include="SongCore" HintPath="$(BeatSaberDir)\Plugins\SongCore.dll" />
-    <Reference Include="Tweening" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Tweening.dll" />
+    <!-- Beat Saber 1.29.1 has no separate Tweening assembly; mirror the production project's conditional reference so that version's tests stay warning-free. -->
+    <Reference Include="Tweening" Condition="Exists('$(BeatSaberDir)\Beat Saber_Data\Managed\Tweening.dll')" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Tweening.dll" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\UnityEngine.CoreModule.dll" />
+    <Reference Include="VRUI" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\VRUI.dll" />
+    <!-- Loading the built plugin for reflection tests must resolve the module containing AssetBundle.LoadFromMemory used by the GPU resource path. -->
+    <Reference Include="UnityEngine.AssetBundleModule" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\UnityEngine.AssetBundleModule.dll" />
     <Reference Include="Zenject" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Zenject.dll" />
+    <Reference Include="Zenject-usage" HintPath="$(BeatSaberDir)\Beat Saber_Data\Managed\Zenject-usage.dll" />
+    <!-- Unity's Mono runs the game's own MonoMod detour backend, so patch-cycle tests regenerate real wrappers. -->
+    <Reference Include="Mono.Cecil" HintPath="$(BeatSaberDir)\Libs\Mono.Cecil.dll" />
+    <Reference Include="MonoMod.RuntimeDetour" HintPath="$(BeatSaberDir)\Libs\MonoMod.RuntimeDetour.dll" />
+    <Reference Include="MonoMod.Utils" HintPath="$(BeatSaberDir)\Libs\MonoMod.Utils.dll" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,29 @@
+﻿{
+  "$schema": "https://raw.githubusercontent.com/DotNetAnalyzers/StyleCopAnalyzers/master/StyleCop.Analyzers/StyleCop.Analyzers/Settings/stylecop.schema.json",
+  "settings": {
+    "indentation": {
+      "indentationSize": 4,
+      "tabSize": 4,
+      "useTabs": false
+    },
+    "orderingRules": {
+      "elementOrder": [
+        "kind"
+      ],
+      "systemUsingDirectivesFirst": true,
+      "usingDirectivesPlacement": "outsideNamespace",
+      "blankLinesBetweenUsingGroups": "allow"
+    },
+    "namingRules": {
+      "tupleElementNameCasing": "PascalCase"
+    },
+    "documentationRules": {
+      "companyName": "EklipZ",
+      "documentExposedElements": false,
+      "documentInternalElements": false,
+      "documentPrivateElements": false,
+      "documentPrivateFields": false,
+      "documentInterfaces": false
+    }
+  }
+}

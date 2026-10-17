@@ -1,0 +1,13 @@
+<bg>
+  <settings-container child-control-width='true' child-expand-width='true' size-delta-y='-15'>
+    <bool-setting text='Enable ChromaGLS' value='enabled' apply-on-change='true'
+                  hover-hint='Enable or disable ChromaGLS custom colors immediately.'/>
+    <bool-setting text='Enable Ferrofluid Info Button' value='ferrofluid-border-enabled' apply-on-change='true'
+                  hover-hint='Disable to remove the ferrofluid ChromaGLS map indicator around the info button.'/>
+    <bool-setting text='Enable Ferrofluid Cube' value='ferrofluid-cube-enabled' apply-on-change='true'
+                  hover-hint='Enable a cube of ferrofluid on the floor as a fidget toy in the main menu.'/>
+    <bool-setting text='Enable Ferrofluid Sphere' value='ferrofluid-sphere-enabled' apply-on-change='true'
+                  hover-hint='Enable a sphere of ferrofluid on the floor as a fidget toy in the main menu.'/>
+  </settings-container>
+  <horizontal id='ferrofluid-preview-anchor' preferred-width='1' preferred-height='1'/>
+</bg>

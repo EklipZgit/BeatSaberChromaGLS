@@ -1,0 +1,5 @@
+<bg>
+  <text id='update-banner-message' text='ChromaGLS has an update available!' font-size='4' align='Center'/>
+  <text id='update-banner-versions' text='' font-size='3.5' align='Center'/>
+  <clickable-text id='update-banner-link' text='&lt;u&gt;Find the latest here&lt;/u&gt;' rich-text='true' font-size='3.5' align='Center' color='#7FD8FF' default-color='#7FD8FF' highlight-color='#FFFFFF' on-click='open-releases'/>
+</bg>

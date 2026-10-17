@@ -1,3 +1,4 @@
+using ChromaGLS.Updates;
 using JetBrains.Annotations;
 using Zenject;
 
@@ -10,6 +11,8 @@ namespace ChromaGLS.Settings
         {
             // Bind and eagerly construct the UI so its GameplaySetup tab is registered as soon as the menu container is installed.
             Container.BindInterfacesTo<ChromaGLSSettingsUI>().AsSingle().NonLazy();
+            Container.BindInterfacesTo<FerrofluidMenuLifecycle>().AsSingle().NonLazy();
+            Container.BindInterfacesTo<UpdateMenuButton>().AsSingle().NonLazy();
         }
     }
 }
