@@ -1,5 +1,7 @@
 # ChromaGLS
 
+**Requires [BeatToTheFuture](https://github.com/EklipZgit/BeatToTheFuture/releases).** so that mappers' ChromaGLS maps in V3 can still use V4 walls and VNJS. Install the release matching your Beat Saber version.
+
 Custom RGBA colors for Beat Saber's Group Lighting System (GLS), with independent strobe colors, flexible strobe timing, RGB/HSV transitions, and per-light color distributions.
 
 Works alongside Chroma and Heck. Use the release built for your Beat Saber version.
@@ -12,8 +14,13 @@ Works alongside Chroma and Heck. Use the release built for your Beat Saber versi
 
 ## Demo
 
-[Watch the demo and explanation](https://youtu.be/3hOmEZGkvDM). The example maps are in [TestMaps](TestMaps).
+[Watch the demo and explanation](https://youtu.be/3hOmEZGkvDM). (It is out of date, there are many more features than that now, see [Using ChromaGLS](UsingChromaGLS.md).
+However the example maps from that demo are in [TestMaps](TestMaps).
 
 ## Contact
 
-Find **EklipZ** on Discord. DM me for bugs, PRs, or ideas; I may miss GitHub notifications and server mentions.
+Find **EklipZ** on Discord. I am mostly active in the ChroMapper discord where ChromaGLS has a dedicated bug and suggestion forum, and its own channels.
+Reach out there, or DM me for bugs, PRs, or ideas. I will likely miss server @'s in discord servers other than the ChroMapper discord.
+
+Join the ChroMapper discord [here](https://discord.gg/YmEt9EZ8pw)
+

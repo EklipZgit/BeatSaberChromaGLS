@@ -2,7 +2,7 @@
 
 ## [1.1.0]
 
-[GitHub release](https://github.com/EklipZgit/BeatSaberChromaGLS/releases/tag/v2026-10-16-1.1.0)
+[GitHub release](https://github.com/EklipZgit/BeatSaberChromaGLS/releases/tag/v2026-10-17-1.1.0)
 
 ### Added
 
