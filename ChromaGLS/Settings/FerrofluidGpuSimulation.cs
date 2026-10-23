@@ -139,6 +139,8 @@ namespace ChromaGLS.Settings
         private static readonly int SphereBulgeScaleId = Shader.PropertyToID("_SphereBulgeScale");
 
         private static readonly int SiteSurfaceTextureId = Shader.PropertyToID("_SiteSurfaceTex");
+        private static readonly int SiteDeformationTextureId = Shader.PropertyToID("_SiteDeformationTex");
+        private static readonly int SiteBulgeTextureId = Shader.PropertyToID("_SiteBulgeTex");
         private static readonly int RestSurfaceTextureId = Shader.PropertyToID("_RestSurfaceTex");
         private static readonly int PrimitiveYawCosSinId = Shader.PropertyToID("_PrimitiveYawCosSin");
         private static readonly int PrimitiveCellMetricId = Shader.PropertyToID("_PrimitiveCellMetric");
@@ -175,6 +177,8 @@ namespace ChromaGLS.Settings
 
         private RenderTexture? _siteSurface;
         private RenderTexture? _restSurface;
+        private RenderTexture? _siteDeformation;
+        private RenderTexture? _siteBulge;
         private Config _config;
         private int _particleCount;
         private int _particleTextureSize;
@@ -257,6 +261,8 @@ namespace ChromaGLS.Settings
             {
                 _siteSurface = CreateRenderTexture("ChromaGLS Ferrofluid Site Surface", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
                 _restSurface = CreateRenderTexture("ChromaGLS Ferrofluid Rest Surface", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
+                CreatePrimitiveDeformationTextures();
+                _surfaceMaterial.EnableKeyword("FERROFLUID_CACHED_DEFORMATION");
             }
 
             // Relax cube sites against the current roundness to keep spacing even across rounded edges.
@@ -1142,6 +1148,7 @@ namespace ChromaGLS.Settings
             _surfaceMaterial.SetVector(MagnetOpeningDirectionId, Vector3.zero);
             _surfaceMaterial.SetFloat(MagnetOpeningStrengthId, 0f);
             AdvanceSimulation();
+            RenderPrimitiveDeformation();
         }
 
         private void ApplySecondaryMagnet(Vector3 position, Vector2 pointer, float strength)
@@ -1297,6 +1304,7 @@ namespace ChromaGLS.Settings
             {
                 _siteSurface.Release();
                 UnityEngine.Object.Destroy(_siteSurface);
+                ReleasePrimitiveDeformationTextures();
             }
 
             if (_restSurface != null)
@@ -1414,6 +1422,29 @@ namespace ChromaGLS.Settings
             _surfaceMaterial.SetTexture(SpringStateTextureId, _springCurrent);
         }
 
+        private void CreatePrimitiveDeformationTextures()
+        {
+            _siteDeformation = CreateRenderTexture("ChromaGLS Ferrofluid Site Deformation", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
+            _siteBulge = CreateRenderTexture("ChromaGLS Ferrofluid Site Bulge", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
+            _surfaceMaterial.SetTexture(SiteDeformationTextureId, _siteDeformation);
+            _surfaceMaterial.SetTexture(SiteBulgeTextureId, _siteBulge);
+        }
+
+        private void RenderPrimitiveDeformation()
+        {
+            // Magnet positions change between simulation ticks, so refresh the shared site responses every presentation frame.
+            Graphics.Blit(Texture2D.blackTexture, _siteDeformation, _surfaceMaterial, 2);
+            Graphics.Blit(Texture2D.blackTexture, _siteBulge, _surfaceMaterial, 3);
+        }
+
+        private void ReleasePrimitiveDeformationTextures()
+        {
+            _siteDeformation!.Release();
+            _siteBulge!.Release();
+            UnityEngine.Object.Destroy(_siteDeformation);
+            UnityEngine.Object.Destroy(_siteBulge);
+        }
+
         // Keep this CPU spring calculation in sync with the height-spring shader.
         internal static Vector2 IntegrateSpikeSpringScale(
             float height,
@@ -1478,6 +1509,8 @@ namespace ChromaGLS.Settings
                 _restSurface!.Release();
                 UnityEngine.Object.Destroy(_restSurface);
                 _restSurface = CreateRenderTexture("ChromaGLS Ferrofluid Rest Surface", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
+                ReleasePrimitiveDeformationTextures();
+                CreatePrimitiveDeformationTextures();
             }
 
             _simulationMaterial.SetInt(ParticleTextureSizeId, _particleTextureSize);

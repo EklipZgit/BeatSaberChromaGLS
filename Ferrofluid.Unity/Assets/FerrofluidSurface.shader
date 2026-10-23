@@ -44,6 +44,8 @@ Shader "ChromaGLS/FerrofluidSurface"
         sampler2D _SpringStateTex;
         sampler2D _StateTex;
         sampler2D _SiteSurfaceTex;
+        sampler2D _SiteDeformationTex;
+        sampler2D _SiteBulgeTex;
         int _ParticleCount;
         sampler2D _EnvironmentTex;
         sampler2D _ThinFilmTex;
@@ -562,10 +564,10 @@ Shader "ChromaGLS/FerrofluidSurface"
                 * (_SurfaceShapeMode > 1.5 ? _SphereBulgeScale : 1.0);
         }
 
-        void SpikeDeformation(float2 siteParticleUv, out float3 spikeDirection, out float magneticHeightScale, out float apexSharpening, out float3 primitiveBulgeOffset)
+        void CalculateSpikeDeformation(float2 siteParticleUv, float4x4 objectToWorld, out float3 spikeDirection, out float magneticHeightScale, out float apexSharpening, out float3 primitiveBulgeOffset)
         {
             FerrofluidSiteField field;
-            FerrofluidSiteFrame(siteParticleUv, unity_ObjectToWorld, field);
+            FerrofluidSiteFrame(siteParticleUv, objectToWorld, field);
             float frontFieldResponse;
             magneticHeightScale = FerrofluidMagneticHeightTarget(field, frontFieldResponse);
             apexSharpening = smoothstep(0.25, 0.6, frontFieldResponse);
@@ -592,6 +594,41 @@ Shader "ChromaGLS/FerrofluidSurface"
 
                 primitiveBulgeOffset = field.surfaceNormal * primitiveSupportHeight;
             }
+        }
+
+        void SpikeDeformation(float2 siteParticleUv, out float3 spikeDirection, out float magneticHeightScale, out float apexSharpening, out float3 primitiveBulgeOffset)
+        {
+        #if defined(FERROFLUID_CACHED_DEFORMATION)
+            float4 deformation = tex2Dlod(_SiteDeformationTex, float4(siteParticleUv, 0.0, 0.0));
+            spikeDirection = deformation.xyz;
+            apexSharpening = deformation.w;
+            primitiveBulgeOffset = tex2Dlod(_SiteBulgeTex, float4(siteParticleUv, 0.0, 0.0)).xyz;
+            // Vertex height comes from the spring texture, so the instantaneous target is not cached.
+            magneticHeightScale = 0.0;
+        #else
+            CalculateSpikeDeformation(siteParticleUv, unity_ObjectToWorld, spikeDirection, magneticHeightScale, apexSharpening, primitiveBulgeOffset);
+        #endif
+        }
+
+        // Each site has one magnet response shared by all vertices and normal samples that refer to it.
+        float4 FerrofluidSiteDeformationFragment(FerrofluidSpringVaryings input) : SV_Target
+        {
+            float3 direction;
+            float height;
+            float sharpening;
+            float3 bulge;
+            CalculateSpikeDeformation(input.uv, _FerrofluidObjectToWorld, direction, height, sharpening, bulge);
+            return float4(direction, sharpening);
+        }
+
+        float4 FerrofluidSiteBulgeFragment(FerrofluidSpringVaryings input) : SV_Target
+        {
+            float3 direction;
+            float height;
+            float sharpening;
+            float3 bulge;
+            CalculateSpikeDeformation(input.uv, _FerrofluidObjectToWorld, direction, height, sharpening, bulge);
+            return float4(bulge, 0.0);
         }
 
         // Keep spring state per particle so moving spikes cannot inherit a neighbor's height and velocity.
@@ -933,6 +970,7 @@ Shader "ChromaGLS/FerrofluidSurface"
             #pragma vertex FerrofluidSurfaceVertex
             #pragma fragment FerrofluidSurfaceFragment
             #pragma multi_compile_instancing
+            #pragma multi_compile_local _ FERROFLUID_CACHED_DEFORMATION
             ENDCG
         }
 
@@ -948,6 +986,34 @@ Shader "ChromaGLS/FerrofluidSurface"
             CGPROGRAM
             #pragma vertex FerrofluidSpringVertex
             #pragma fragment FerrofluidHeightSpringFragment
+            ENDCG
+        }
+
+        Pass
+        {
+            Name "FERROFLUID_SITE_DEFORMATION"
+            Tags { "LightMode"="FerrofluidSiteDeformation" }
+            Cull Off
+            ZWrite Off
+            ZTest Always
+
+            CGPROGRAM
+            #pragma vertex FerrofluidSpringVertex
+            #pragma fragment FerrofluidSiteDeformationFragment
+            ENDCG
+        }
+
+        Pass
+        {
+            Name "FERROFLUID_SITE_BULGE"
+            Tags { "LightMode"="FerrofluidSiteBulge" }
+            Cull Off
+            ZWrite Off
+            ZTest Always
+
+            CGPROGRAM
+            #pragma vertex FerrofluidSpringVertex
+            #pragma fragment FerrofluidSiteBulgeFragment
             ENDCG
         }
     }

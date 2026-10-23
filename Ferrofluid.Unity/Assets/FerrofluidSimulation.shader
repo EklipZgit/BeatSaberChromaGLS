@@ -431,6 +431,10 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         int2 cell = (int2)((uint2)pixel / uint2(3u, 2u));
         int2 block = pixel - (cell * int2(3, 2));
         int blockId = block.x + (block.y * 3);
+        // The sixth atlas texel is padding. The height pass reads four ID blocks and one bounds block.
+        if (blockId == 5)
+            return 0.0;
+
         float2 centerUv = (cell + 0.5) / _CoarseCandidateSize;
         float2 position;
         float2 metric;
