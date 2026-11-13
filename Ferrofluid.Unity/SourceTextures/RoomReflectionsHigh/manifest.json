@@ -1,0 +1,658 @@
+{
+  "exportedUtc": "2026-11-09T01:54:36.2964260Z",
+  "capturePosition": "(0.00, 1.70, -0.61)",
+  "faceSize": 2048,
+  "format": "ARGBHalf/Linear",
+  "cubemapPixelsRowsFlipped": true,
+  "faceForward": [
+    "(1.00, 0.00, 0.00)",
+    "(-1.00, 0.00, 0.00)",
+    "(0.00, 1.00, 0.00)",
+    "(0.00, -1.00, 0.00)",
+    "(0.00, 0.00, 1.00)",
+    "(0.00, 0.00, -1.00)"
+  ],
+  "faceUp": [
+    "(0.00, 1.00, 0.00)",
+    "(0.00, 1.00, 0.00)",
+    "(0.00, 0.00, -1.00)",
+    "(0.00, 0.00, 1.00)",
+    "(0.00, 1.00, 0.00)",
+    "(0.00, 1.00, 0.00)"
+  ],
+  "faceNames": [
+    "positiveX",
+    "negativeX",
+    "positiveY",
+    "negativeY",
+    "positiveZ",
+    "negativeZ"
+  ],
+  "sourceCamera": "MenuMainCamera",
+  "sourceEffects": [
+    "MainCamera",
+    "MainEffectController",
+    "DepthTextureController",
+    "ImageEffectController",
+    "BloomPrePass",
+    "UnityEngine.SpatialTracking.TrackedPoseDriver",
+    "Vivify.Controllers.MultipassKeywordController",
+    "Vivify.PostProcessing.PostProcessingController",
+    "Vivify.Controllers.CameraPropertyController",
+    "CameraUtils.Behaviours.AutoCameraRegistrator",
+    "SiraUtil.Tools.FPFC.SimpleCameraController"
+  ],
+  "fadeValue": 1.0,
+  "logoCameraRelativePosition": "(-1.19, 17.20, 26.71)",
+  "logoLayer": 0,
+  "logoSpriteEnabled": true,
+  "logoStoredMaterial": "AfterGeometrySprite (Custom/CustomParticles)",
+  "logoStoredColor": "RGBA(1.000, 0.000, 0.000, 1.000)",
+  "logoOnMaterial": "AfterGeometrySprite (Custom/CustomParticles)",
+  "logoOffMaterial": "AfterGeometryNoGlowSprite (Custom/CustomParticles)",
+  "logoSpriteOnColor": "RGBA(1.000, 0.000, 0.000, 1.000)",
+  "logoCurrentMaterial": "AfterGeometryNoGlowSprite (Custom/CustomParticles)",
+  "logoCurrentColor": "RGBA(0.000, 0.000, 0.000, 1.000)",
+  "lightOnColor": "RGBA(1.000, 0.031, 0.031, 1.000)",
+  "lightStoredColor": "RGBA(1.000, 0.031, 0.031, 1.000)",
+  "lightCurrentColor": "RGBA(0.000, 0.000, 0.000, 1.000)",
+  "previousEnabledKeywordCount": 4,
+  "floorReflection": {
+    "textureFile": "floor-feet.exr",
+    "planeY": 0.005,
+    "minimumX": -2.0,
+    "minimumZ": -2.0,
+    "inverseWidth": 0.25,
+    "inverseDepth": 0.25,
+    "width": 4096,
+    "height": 4096,
+    "diagnosticFiles": [
+      "feet-baseline.exr",
+      "feet-baseline.png",
+      "feet-withfeet.exr",
+      "feet-withfeet.png",
+      "floor-feet.png"
+    ],
+    "strategy": "max(withFeet.rgb - baseline.rgb, 0); sign held off; feet scope hidden for baseline then only originally enabled components restored",
+    "signState": "off",
+    "texelRowOrder": "nominal: bottom-left texel maps minimum X / minimum Z from camera basis; rows kept as rendered (no flip); orientation unverified until native inspection",
+    "camera": {
+      "position": "(0.00, 2.01, 0.00)",
+      "forward": "(0.00, -1.00, 0.00)",
+      "right": "(1.00, 0.00, 0.00)",
+      "up": "(0.00, 0.00, 1.00)",
+      "fieldOfView": 90.0,
+      "aspect": 1.0,
+      "projection": "perspective, positive projection, no culling inversion",
+      "metersPerPixel": 0.0009765625,
+      "footprintMeters": "4 x 4"
+    },
+    "feet": {
+      "path": "Wrapper/MenuEnvironmentCore/PlayersPlace/MenuFeet/Feet",
+      "position": "(0.00, 0.01, 0.00)",
+      "rotation": "(90.00, 0.00, 0.00)",
+      "scale": "(1.20, 1.20, 1.20)",
+      "boundsCenter": "(0.00, 0.01, 0.00)",
+      "boundsExtents": "(0.21, 0.12, 0.21)",
+      "boundsMin": "(-0.21, -0.12, -0.21)",
+      "sprite": "FeetIcon",
+      "spriteColor": "RGBA(0.188, 0.620, 1.000, 1.000)"
+    }
+  },
+  "hidden": [
+    {
+      "kind": "sparkRenderer",
+      "name": "SparksUp",
+      "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Logo/EFlickering/SparksUp",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "sparkRenderer",
+      "name": "SparksDown",
+      "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Logo/EFlickering/SparksDown",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Menu Light",
+      "path": "ChromaGLS Menu Light",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Menu Light Glow",
+      "path": "ChromaGLS Menu Light/ChromaGLS Menu Light Glow",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Menu Light",
+      "path": "ChromaGLS Menu Light",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Ferrofluid Floor Shadow",
+      "path": "ChromaGLS Ferrofluid Floor Shadow",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Ferrofluid Floor Shadow",
+      "path": "ChromaGLS Ferrofluid Floor Shadow",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Ferrofluid Floor Shadow",
+      "path": "ChromaGLS Ferrofluid Floor Shadow",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Ferrofluid Sphere",
+      "path": "ChromaGLS Ferrofluid Sphere",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Ferrofluid Floor Shadow",
+      "path": "ChromaGLS Ferrofluid Floor Shadow",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "ownRenderer",
+      "name": "ChromaGLS Ferrofluid RoundedCube",
+      "path": "ChromaGLS Ferrofluid RoundedCube",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "controllerRenderer",
+      "name": "Glowing",
+      "path": "Wrapper/MenuCore/Origin/MenuControllers/ControllerRight/MenuHandle/Glowing",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "controllerRenderer",
+      "name": "Normal",
+      "path": "Wrapper/MenuCore/Origin/MenuControllers/ControllerRight/MenuHandle/Normal",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "controllerRenderer",
+      "name": "VRLaserPointer(Clone)",
+      "path": "Wrapper/MenuCore/Origin/MenuControllers/ControllerRight/MenuHandle/VRLaserPointer(Clone)",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "controllerRenderer",
+      "name": "OnlyDepth",
+      "path": "Wrapper/MenuCore/Origin/MenuControllers/ControllerRight/MenuHandle/VRLaserPointer(Clone)/OnlyDepth",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "controllerRenderer",
+      "name": "Glowing",
+      "path": "Wrapper/MenuCore/Origin/MenuControllers/ControllerLeft/MenuHandle/Glowing",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "controllerRenderer",
+      "name": "Normal",
+      "path": "Wrapper/MenuCore/Origin/MenuControllers/ControllerLeft/MenuHandle/Normal",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "Viewport",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ScreenContainer/LeftScreen/MenuButtonsViewController/Contents/BSMLBackground/BSMLScrollView/Viewport",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "ChromaGLS Update Banner",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ChromaGLS Update Banner",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "Viewport",
+      "path": "BSMLScrollViewTemplate/Viewport",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "ProgressBar",
+      "path": "ProgressBar",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "Counters+ | Main Canvas",
+      "path": "Counters+ | Main Canvas",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "MenuButtonsViewController",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ScreenContainer/LeftScreen/MenuButtonsViewController",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "RightScreen",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ScreenContainer/RightScreen",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "MainMenuViewController",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ScreenContainer/MainScreen/MainMenuViewController",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "ScreenContainer",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ScreenContainer",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "BottomScreen",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/BottomScreen",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "TopScreen",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/TopScreen",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "LeftScreen",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ScreenContainer/LeftScreen",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "ViewControllers",
+      "path": "Wrapper/ViewControllers",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "KeyboardContainer",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ScreenContainer/KeyboardContainer",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "canvas",
+      "name": "MainScreen",
+      "path": "Wrapper/MenuCore/UI/ScreenSystem/ScreenContainer/MainScreen",
+      "scene": "MainMenu"
+    },
+    {
+      "kind": "feetRenderer",
+      "name": "Feet",
+      "path": "Wrapper/MenuEnvironmentCore/PlayersPlace/MenuFeet/Feet",
+      "scene": "MainMenu"
+    }
+  ],
+  "includedNativeScopes": [
+    {
+      "name": "Notes",
+      "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes",
+      "renderers": [
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (3)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (3)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (9)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (9)/Note (14)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (9)/Note (13)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (9)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (9)/Shadow (1)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (9)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (9)/Note (14)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (9)/Note (14)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (10)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (10)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (10)/Note (13)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (10)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (11)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (11)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (15)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (15)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (8)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (8)/Note",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (8)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (8)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (8)/Note (4)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (8)/Note (4)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/LevitatingNote/Note (16)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/LevitatingNote/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Note (12)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Note (16)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Shadow (1)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Note (2)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Note (2)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Note (3)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/Note (17)/Note (3)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/LevitatingNote (1)/Note (16)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/Notes/LevitatingNote (1)/Shadow",
+          "type": "SpriteRenderer"
+        }
+      ],
+      "rendererCount": 38
+    },
+    {
+      "name": "PileOfNotes",
+      "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes",
+      "renderers": [
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (12)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (16)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Shadow (1)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (2)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (2)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (3)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (3)/Shadow (2)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (3)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (4)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (18)/Note (4)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Note (12)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Note (16)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Shadow (1)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Note (2)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Note (2)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Note (3)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Note (3)/Shadow (2)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Note (19)/Note (3)/Shadow",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Arrow",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Shadow (2)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Arrow (2)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Arrow (2)/Shadow (3)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Arrow (3)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Arrow (3)/Shadow (3)",
+          "type": "SpriteRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Arrow (1)",
+          "type": "MeshRenderer"
+        },
+        {
+          "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/PileOfNotes/Arrow (1)/Shadow (3)",
+          "type": "SpriteRenderer"
+        }
+      ],
+      "rendererCount": 32
+    },
+    {
+      "name": "LevitatingNoteManager",
+      "path": "Wrapper/MenuEnvironmentManager/DefaultMenuEnvironment/LevitatingNoteManager",
+      "renderers": [],
+      "rendererCount": 0
+    }
+  ],
+  "roomProjection": {
+    "capturePosition": [
+      0.0,
+      1.7,
+      -0.6096
+    ],
+    "floorY": 0.0,
+    "logoPlane": [
+      0.0,
+      0.0,
+      1.0,
+      -26.1
+    ]
+  },
+  "roomRadianceProcessing": {
+    "sourceCaptureDirectory": "C:\\Users\\tdrak\\BSManager\\BSInstances\\1.44.1\\UserData\\NativeMenuReflectionCapture\\2026-11-09_014756",
+    "sourceCaptureFaceSize": 4096,
+    "sourceFilesSha256": {
+      "on-0-positiveX.exr": "6c33e05fd19f4d2455e526a5cd947b8b6d8f3aa61df2eee2b99238a805d15478",
+      "emissive-on-0-positiveX.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "on-1-negativeX.exr": "aaf26cfef9e573457ff900c3134a1e6d359423b3193233066b587942f802e943",
+      "emissive-on-1-negativeX.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "on-2-positiveY.exr": "9efe393d4b48986f15d33040b6c60093a6c5dda29f68801eac3f3d6c9497a5bf",
+      "emissive-on-2-positiveY.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "on-3-negativeY.exr": "a8e63f075747b0e03292ac05004e6fc223710a25142676c6aaba37a5d03ece43",
+      "emissive-on-3-negativeY.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "on-4-positiveZ.exr": "4b80b0378fb564243d64d379d17e88a2612dd02c90245ab8d308fe7837c10ea3",
+      "emissive-on-4-positiveZ.exr": "c5a06640fad034d8877d8b466846198c552537895c7cb5fa5c8723963af0973c",
+      "on-5-negativeZ.exr": "cbae3d151c0036c4052a4945e26d316fe57f770cc3b7a407c2a7deafe67dbf19",
+      "emissive-on-5-negativeZ.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "off-0-positiveX.exr": "6c33e05fd19f4d2455e526a5cd947b8b6d8f3aa61df2eee2b99238a805d15478",
+      "emissive-off-0-positiveX.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "off-1-negativeX.exr": "aaf26cfef9e573457ff900c3134a1e6d359423b3193233066b587942f802e943",
+      "emissive-off-1-negativeX.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "off-2-positiveY.exr": "d04812ebfdb6afc908134c20ec448659cd2a0d1a8822ba128cdafdcf3d61b5af",
+      "emissive-off-2-positiveY.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "off-3-negativeY.exr": "a8e63f075747b0e03292ac05004e6fc223710a25142676c6aaba37a5d03ece43",
+      "emissive-off-3-negativeY.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "off-4-positiveZ.exr": "0fbed6b130bfa3146594acbff4b32351da76bc50bba3ec82c6697b7a95bd4187",
+      "emissive-off-4-positiveZ.exr": "6622e8234ebd7b0e187c7356a513549f1fffe09aa58a8ee5df89df2907b98905",
+      "off-5-negativeZ.exr": "cbae3d151c0036c4052a4945e26d316fe57f770cc3b7a407c2a7deafe67dbf19",
+      "emissive-off-5-negativeZ.exr": "6022ad8e1fe0ee14657c2c5e0745b9a39e9a137958cb8c7bb7da5a2792820f06",
+      "floor-feet.exr": "8ae9e54005ac79b02af6e09774fab8ed3dccffb7a244f688aa6b86d0d58c9651"
+    },
+    "faceSize": 2048,
+    "feetSize": 4096,
+    "formula": "max(box(native full camera RGB), 0) + 3 * max(box(isolated Logo RGB), 0)",
+    "nativeCompositeGain": 1.0,
+    "additionalLogoGain": 3.0,
+    "threshold": null,
+    "bloom": "native full camera output, retained without a second blur",
+    "rowConvention": "unchanged native EXR scanlines; existing Unity cubemap baker flips once",
+    "status": "full-scene cubemap sources; horizon baked in, no separate horizon texture"
+  }
+}

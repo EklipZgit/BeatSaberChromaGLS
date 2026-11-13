@@ -63,6 +63,9 @@ pwsh ./BuildAllVersions.ps1 -Release
 
 # Debug is the default when -Release is omitted.
 pwsh ./BuildAllVersions.ps1 -Version 1.40.8
+
+# Explicit Debug build without the experimental tweak controls.
+pwsh ./BuildAllVersions.ps1 -Version 1.44.1 -Debug
 ```
 
 Use your preconfigured installation paths rather than overriding `BEATSABER_*` for a build. Outputs are under `ChromaGLS/bin/<configuration>/net48/`, including the DLL and packaged ZIP.
@@ -72,10 +75,40 @@ Use your preconfigured installation paths rather than overriding `BEATSABER_*` f
 Normal builds expose only the public enable toggles. To include the experimental ferrofluid tuning menu:
 
 ```powershell
-pwsh ./BuildAllVersions.ps1 -Version 1.44.1 -Release -FerrofluidTweaks
+pwsh ./BuildAllVersions.ps1 -Version 1.44.1 -FerrofluidTweaks
 ```
 
 Tuning values are session-only and reset on restart. The main plugin and ferrofluid enable preferences persist.
+
+Ferrofluid tweak builds always use Debug, even if an older command includes `-Release`.
+`-Debug` and `-Release` together are rejected. Debug configurations disable optimization,
+emit portable PDB symbols, and define `DEBUG`.
+
+Debug deployments (including the default and ferrofluid tweaks) install Unity's native
+Development Player **only for Beat Saber 1.44.1**, following the
+[BSMG testing guide](https://bsmg.wiki/modding/pc/testing.html#using-a-debug-unity-build).
+Other versions still build Debug plugin DLLs but do not require or change their native Unity
+players. The all-version build therefore needs only **Unity 6000.0.40f1 with Windows Mono
+build support** for native debug testing, in addition to the separate ferrofluid bundle editor.
+The script reads the exact Unity patch version from the installed `UnityPlayer.dll`, or from
+`Logs/_latest.log` for legacy numeric DLL versions, and uses that Unity Hub editor's Windows
+x64 Mono development player. The source DLL's full product version must match the installed
+DLL too. Both the modern `win64_player_development_mono` and Unity 2019's
+`win64_development_mono` directory layouts are supported. Install that editor with Windows
+build support first, or pass `-UnityEditorPath 'C:/path/to/Editor/Unity.exe'`. A mismatched or
+missing player is an error, and the selected game must be closed. `-NoDeploy` skips both plugin
+deployment and native player changes. Release builds leave the native player as it is.
+
+Original files and their hashes are preserved once in `<game>/.chromagls-original-player`.
+Repeated Debug builds keep those originals. To restore the saved native player explicitly:
+
+```powershell
+. ./BeatSaberDevelopmentPlayer.ps1
+Set-BeatSaberDevelopmentPlayer -GameDirectory $env:BEATSABER_1_44_1 -Restore
+```
+
+The Development Build overlay or a live `Debug.isDebugBuild` observation verifies native
+debug checks after launch. A compiled Debug DLL alone does not verify those checks.
 
 ### Building from an IDE
 
@@ -226,6 +259,36 @@ if (lightColorEventData is ICustomData customEvent)
 ```
 
 This reads the **authored** color, not the distributed, brightness-composed output for that physical light. Box-only distributions may have no event-level `color` key.
+
+## Build-Time SDK References
+
+Some game targets compile against `AssetBundleLoadingTools`. The build prefers the SDK DLL
+already installed in the configured game's `Plugins` folder. When the game does not ship it,
+`ResolveAssetBundleLoadingTools.ps1` downloads the pinned approved BeatMods package once into
+`%LOCALAPPDATA%\ChromaGLS\BuildDependencies\AssetBundleLoadingTools\<version>` and reuses it on
+later builds (on platforms without `%LOCALAPPDATA%`, the cache falls back to the MSBuild user
+extensions directory). The cached file is a compile-time reference only; the runtime dependency
+still must be installed by the mod manager, and the game install is never modified. Set
+`AssetBundleLoadingToolsPath` to point at an explicit reference DLL, or
+`AssetBundleLoadingToolsCacheDirectory` to relocate the download cache.
+
+## Testing the Reflection Pack Download Locally
+
+Debug builds can exercise the real consent/progress/hash/atomic-install/SDK-load pipeline
+without a hosted URL. Create `UserData/ChromaGLS/Ferrofluid/reflection-pack-development-source.txt`
+inside the game install containing exactly one line: the absolute path to an existing local
+bundle file (any filename), for example the repository copy at
+`C:/src/BeatSaberStuff/BeatSaberChromaGLS/ChromaGLS/Settings/ferrofluid-reflections-windows.bundle`. The file's byte length and SHA-256
+must still match the embedded descriptor exactly, so use the bundle produced by the same build.
+
+- Debug builds only; Release builds ignore this file entirely.
+- The path is developer input, never persisted in config and never part of the descriptor schema.
+- Restart the game after changing the file. To retest the offer flow, move or rename the already
+  installed `ChromaGLS-Ferrofluid-Reflections-<sha>.bundle` first (keep your own backup; the
+  installer never deletes a valid installed pack).
+- An unreadable or wrong-content source reports a failed download after explicit consent; it
+  never falls back to HTTP.
+- After declining once, reopen the prompt manually from the Reflection maps button in the mod settings; the persisted decline only suppresses the automatic offer.
 
 ## Future Work
 

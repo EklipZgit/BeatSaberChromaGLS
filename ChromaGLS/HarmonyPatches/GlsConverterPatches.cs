@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using ChromaGLS.Helpers;
 using CustomJSONData.CustomBeatmap;
 using HarmonyLib;
 using UnityEngine;
@@ -47,13 +48,16 @@ namespace ChromaGLS.HarmonyPatches
 
         private static bool IsValidEasingId(object? raw)
         {
-            return GlsEasingRuntimePatch.TryGetCustomEasing(raw, out _);
+            return GlsEasingRuntimePatch.TryGetCustomEasing(raw, out _) || IsSplineEasing(raw);
         }
 
         private static bool IsValidTrackEasingId(object? raw)
         {
-            return GlsEasingRuntimePatch.TryGetTrackEasing(raw, out _);
+            return GlsEasingRuntimePatch.TryGetTrackEasing(raw, out _) || IsSplineEasing(raw);
         }
+
+        private static bool IsSplineEasing(object? raw) =>
+            GlsEasingRuntimePatch.TryParseEasingId(raw, out int id) && GlsSplineMath.IsCatmullRom(id);
 
         private static bool IsValidEasingType(object? raw)
         {

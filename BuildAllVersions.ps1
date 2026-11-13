@@ -25,9 +25,18 @@
 .PARAMETER Release
     Build Release configurations instead of the default Debug configurations.
 
+.PARAMETER Debug
+    Build Debug configurations and install the Unity Development Player for 1.44.1 only.
+    Does not require the ferrofluid tweak menu. -NoDeploy skips player installation.
+
+.PARAMETER UnityEditorPath
+    Optional exact-version Unity.exe path for Development Player installation.
+    Otherwise uses the matching Unity Hub editor. Applies to 1.44.1 Debug deployments only.
+
 .PARAMETER FerrofluidTweaks
     Compile the session-only ferrofluid tweak menu (FERROFLUID_TWEAKS).
-    Main builds omit it and expose only the four public toggles.
+    Always builds Debug configurations, including when -Release is supplied.
+    Main builds omit those session controls. Saved menu lights remain available.
 
 #>
 param(
@@ -36,13 +45,21 @@ param(
 
     [switch]$Release,
 
+    [switch]$Debug,
+
+    [string]$UnityEditorPath,
+
     # FerrofluidTweakMenuHiddenBehindBuildFlag keeps the tweak sliders out of main builds; this switch is the only opt-in.
     [switch]$FerrofluidTweaks,
 
     # Match the project fallback so local builds cannot numerically downgrade an installed plugin.
     # The build task adds the Beat Saber version as SemVer build metadata.
     [ValidatePattern('^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')]
-    [string]$PluginVersion = "1.0.0"  # stop touching this
+    [string]$PluginVersion = "1.0.0",  # stop touching this
+
+    # Compile without installing into the game directory; also skips the pending-plugin cleanup that
+    # only makes sense when BSMT actually deployed a copy.
+    [switch]$NoDeploy
 )
 
 Set-StrictMode -Version Latest
@@ -50,15 +67,27 @@ $ErrorActionPreference = "Stop"
 
 # Repository-local cleanup keeps queued BSIPA deployments from outranking a later direct multi-version build.
 . (Join-Path $PSScriptRoot "ScriptCommon.ps1")
+. (Join-Path $PSScriptRoot "BeatSaberDevelopmentPlayer.ps1")
 
-# Default local builds to Debug; CI and packaging pass -Release explicitly.
+if ($Debug -and $Release)
+{
+    throw 'Choose either -Debug or -Release, not both.'
+}
+
+# Tuning builds need debug symbols even when an older invocation includes -Release.
 $Configuration = "Debug"
-if ($Release) {
+if ($Release -and -not $FerrofluidTweaks)
+{
     $Configuration = "Release"
+}
+
+if ($Release -and $FerrofluidTweaks)
+{
+    Write-Host 'Ferrofluid tweaks require Debug; ignoring -Release.' -ForegroundColor Yellow
 }
 $SupportedVersions = @("1.29.1", "1.34.2", "1.37.1", "1.40.8", "1.42.1", "1.44.1", "1.44.2")
 # $SupportedVersions = @("1.29.1", "1.40.8")
-$SlnFile = Join-Path $PSScriptRoot "ChromaGLS.sln"
+$SlnFile = Join-Path $PSScriptRoot "ChromaGLS.Managed.slnf"
 
 function Get-BeatSaberEnvVarName {
     param([string]$GameVersion)
@@ -69,10 +98,6 @@ if (-not (Test-Path $SlnFile)) {
     Write-Error "Solution not found: $SlnFile"
     exit 1
 }
-
-# The player cannot compile HLSL, so every supported-version build first guarantees that the embedded GPU ferrofluid bundle matches its authored shaders and source textures.
-# The bundle script throws on failure and uses Start-Process.ExitCode; LASTEXITCODE is unset in a clean -NoProfile session and is not this script's result.
-& (Join-Path $PSScriptRoot "BuildFerrofluidBundle.ps1")
 
 $versionsToBuild = if ($Version) { 
     @($Version) 
@@ -117,6 +142,19 @@ Example:
     exit 1
 }
 
+# Native engine debug checks are currently requested only for Beat Saber 1.44.1.
+$DevelopmentPlayerVersion = '1.44.1'
+$installDevelopmentPlayer = -not $NoDeploy -and $Configuration -eq 'Debug' -and $versionsToBuild -contains $DevelopmentPlayerVersion
+if ($installDevelopmentPlayer)
+{
+    $gameDirectory = [Environment]::GetEnvironmentVariable((Get-BeatSaberEnvVarName -GameVersion $DevelopmentPlayerVersion), 'Process')
+    Set-BeatSaberDevelopmentPlayer -GameDirectory $gameDirectory -UnityEditorPath $UnityEditorPath -CheckOnly
+}
+
+# The player cannot compile HLSL, so embed the current shaders before compiling the plugin.
+# BuildFerrofluidBundle throws on failure rather than setting LASTEXITCODE.
+& (Join-Path $PSScriptRoot "BuildFerrofluidBundle.ps1")
+
 $successfulBuilds = @()
 $failedBuilds = @()
 
@@ -129,16 +167,27 @@ foreach ($ver in $versionsToBuild) {
     Write-Host "=== Building $buildConfig ===" -ForegroundColor Cyan
     Write-Host "BeatSaberDir: $beatSaberDir"
 
+    if ($installDevelopmentPlayer -and $ver -eq $DevelopmentPlayerVersion)
+    {
+        Set-BeatSaberDevelopmentPlayer -GameDirectory $beatSaberDir -UnityEditorPath $UnityEditorPath
+    }
+
     $buildArgs = @(
         $SlnFile,
         "-c", $buildConfig,
         "-p:BeatSaberDir=$beatSaberDir",
         "-p:Version=$PluginVersion",
+        "-p:TreatWarningsAsErrors=true",
+        "-warnaserror",
         "--nologo"
     )
     if ($FerrofluidTweaks) {
         $buildArgs += "-p:FerrofluidTweaks=true"
         Write-Host "Ferrofluid tweak menu: ENABLED" -ForegroundColor Yellow
+    }
+    if ($NoDeploy) {
+        $buildArgs += "-p:DisableCopyToGame=True"
+        Write-Host "Deploy to game directory: DISABLED" -ForegroundColor Yellow
     }
 
     dotnet build @buildArgs
@@ -159,8 +208,10 @@ foreach ($ver in $versionsToBuild) {
             Write-Host "Built DLL: $($builtDll.FullName)" -ForegroundColor Green
             Write-Host "Built DLL timestamp (UTC): $($builtDll.LastWriteTimeUtc.ToString('O'))" -ForegroundColor Green
 
-            # BSMT has now deployed either live or pending; discard only a pending ChromaGLS older than the live copy.
-            Remove-StaleBsipaPendingPlugin -GameDirectory $beatSaberDir -PluginFileName "ChromaGLS.dll"
+            if (!$NoDeploy) {
+                # BSMT has now deployed either live or pending; discard only a pending ChromaGLS older than the live copy.
+                Remove-StaleBsipaPendingPlugin -GameDirectory $beatSaberDir -PluginFileName "ChromaGLS.dll"
+            }
         } else {
             Write-Host "Built DLL timestamp: unavailable; expected artifact not found at $builtDllPath" -ForegroundColor Yellow
         }

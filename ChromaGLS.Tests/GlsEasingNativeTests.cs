@@ -59,7 +59,7 @@ internal sealed class GlsEasingNativeTests
     [Test]
     public void ProductionConversionPreservesSupportedAndUnknownIds()
     {
-        foreach (int id in new[] { -1, 0, 1, 2, 3, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 100, 101, 102, -2, 31, 99, 103, int.MaxValue })
+        foreach (int id in new[] { -1, 0, 1, 2, 3, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 100, 101, 102, -2, 31, 99, 105, 106, int.MaxValue })
         {
             // LegacyRecognizedFallbacksRemainCompatible separately preserves the pre-existing 1.29.1 shim for recognized IDs outside this feature.
             if (IsLegacy129 && ((id >= 19 && id <= 30) || (id >= 100 && id <= 102)))
@@ -67,6 +67,12 @@ internal sealed class GlsEasingNativeTests
                 continue;
             }
             Assert.That(Convert(id, applyPatch: true), Is.EqualTo(Convert(id, applyPatch: false)), $"Save ID {id} must retain the native result.");
+        }
+
+        foreach (int id in new[] { 103, 104 })
+        {
+            Assert.That(System.Convert.ToInt32(Convert(id, applyPatch: true)), Is.EqualTo(id),
+                "Generated events retain spline markers until the effect prepares their neighboring controls.");
         }
     }
 

@@ -10,8 +10,8 @@ function Assert-FerrofluidXrPackages
 
     $ManifestPath = Join-Path $ProjectPath "Packages/manifest.json"
     $RequiredPackages = [ordered]@{
-        "com.unity.xr.management" = "4.5.3"
-        "com.unity.xr.mock-hmd"   = "1.5.0-exp.3"
+        "com.unity.xr.management" = @("4.5.3", "4.5.4")
+        "com.unity.xr.mock-hmd"   = @("1.5.0-exp.3")
     }
     if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf))
     {
@@ -22,9 +22,9 @@ function Assert-FerrofluidXrPackages
     foreach ($Package in $RequiredPackages.GetEnumerator())
     {
         if ($Manifest.dependencies.PSObject.Properties.Name -notcontains $Package.Key -or
-            $Manifest.dependencies.($Package.Key) -ne $Package.Value)
+            $Package.Value -notcontains $Manifest.dependencies.($Package.Key))
         {
-            throw "Set $($Package.Key) to $($Package.Value) in $ManifestPath so the bundle retains its stereo shader variants."
+            throw "Set $($Package.Key) to $($Package.Value -join ' or ') in $ManifestPath so the bundle retains its stereo shader variants."
         }
     }
 }

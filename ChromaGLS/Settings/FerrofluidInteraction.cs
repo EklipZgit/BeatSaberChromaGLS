@@ -4,16 +4,47 @@ namespace ChromaGLS.Settings
 {
     internal static class FerrofluidInteraction
     {
-        // Solve the damped spring analytically so controller response stays consistent across headset refresh rates.
-        internal static Vector3 SmoothPosition(Vector3 current, Vector3 target, ref Vector3 velocity, float deltaTime)
+        // Instantaneous gap-closing rate a + d*(b + c*d) fitted through three tunable
+        // time constants at three normalized distances, solved at compile time so each
+        // point can be retuned independently.
+        private const float TrackingTimeNear = 0.1f;
+        private const float TrackingTimeMid = 0.02f;
+        private const float TrackingTimeFar = 0.005f;
+        private const float TrackingDistanceNear = 0.02f;
+        private const float TrackingDistanceMid = 0.5f;
+        private const float TrackingDistanceFar = 2f;
+        private const float TrackingRateNear = 1f / TrackingTimeNear;
+        private const float TrackingRateMid = 1f / TrackingTimeMid;
+        private const float TrackingRateFar = 1f / TrackingTimeFar;
+
+        private const float TrackingRateA =
+            (TrackingRateNear * TrackingDistanceMid * TrackingDistanceFar / ((TrackingDistanceNear - TrackingDistanceMid) * (TrackingDistanceNear - TrackingDistanceFar)))
+            + (TrackingRateMid * TrackingDistanceNear * TrackingDistanceFar / ((TrackingDistanceMid - TrackingDistanceNear) * (TrackingDistanceMid - TrackingDistanceFar)))
+            + (TrackingRateFar * TrackingDistanceNear * TrackingDistanceMid / ((TrackingDistanceFar - TrackingDistanceNear) * (TrackingDistanceFar - TrackingDistanceMid)));
+
+        private const float TrackingRateB =
+            (TrackingRateNear * (TrackingDistanceMid + TrackingDistanceFar) / ((TrackingDistanceNear - TrackingDistanceMid) * (TrackingDistanceFar - TrackingDistanceNear)))
+            + (TrackingRateMid * (TrackingDistanceNear + TrackingDistanceFar) / ((TrackingDistanceMid - TrackingDistanceNear) * (TrackingDistanceFar - TrackingDistanceMid)))
+            + (TrackingRateFar * (TrackingDistanceNear + TrackingDistanceMid) / ((TrackingDistanceFar - TrackingDistanceNear) * (TrackingDistanceMid - TrackingDistanceFar)));
+
+        private const float TrackingRateC =
+            (TrackingRateNear / ((TrackingDistanceNear - TrackingDistanceMid) * (TrackingDistanceNear - TrackingDistanceFar)))
+            + (TrackingRateMid / ((TrackingDistanceMid - TrackingDistanceNear) * (TrackingDistanceMid - TrackingDistanceFar)))
+            + (TrackingRateFar / ((TrackingDistanceFar - TrackingDistanceNear) * (TrackingDistanceFar - TrackingDistanceMid)));
+
+        internal static float CalculateTrackingRate(float normalizedDistance)
         {
-            const float smoothTime = 0.06f;
-            const float omega = 2f / smoothTime;
-            float decay = Mathf.Exp(-omega * deltaTime);
-            Vector3 error = current - target;
-            Vector3 impulse = (velocity + (error * omega)) * deltaTime;
-            velocity = (velocity - (impulse * omega)) * decay;
-            return target + ((error + impulse) * decay);
+            float d = normalizedDistance;
+            return TrackingRateA + (d * (TrackingRateB + (TrackingRateC * d)));
+        }
+
+        internal static Vector3 TrackPosition(Vector3 current, Vector3 target, float surfaceWidth, float deltaTime)
+        {
+            if (deltaTime <= 0f)
+                return current;
+
+            float rate = CalculateTrackingRate(Vector3.Distance(current, target) / surfaceWidth);
+            return current + ((target - current) * (1f - Mathf.Exp(-rate * deltaTime)));
         }
 
         // The rounded-cube minimum also gives missed rays a continuous target at the silhouette.

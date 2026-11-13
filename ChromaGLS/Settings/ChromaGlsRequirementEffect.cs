@@ -69,7 +69,7 @@ namespace ChromaGLS.Settings
 
 #pragma warning disable SA1204
 
-    internal sealed class ChromaGlsRequirementEffect : MaskableGraphic
+    internal sealed partial class ChromaGlsRequirementEffect : MaskableGraphic
     {
         private const string CapabilityName = "ChromaGLS";
         private const int MagnetPerimeterSamples = 256;
@@ -127,9 +127,7 @@ namespace ChromaGLS.Settings
         private Vector2 _pointerSmoothed;
         private Vector3 _magneticFieldPosition;
         private Vector3 _magneticFieldTarget;
-        private Vector3 _magneticFieldVelocity;
         private Vector3 _handPosition;
-        private Vector3 _handVelocity;
         private float _handStrength;
         private bool _hasHand;
 
@@ -285,7 +283,7 @@ namespace ChromaGLS.Settings
             _sceneRenderer.enabled = _fadeAlpha > 0.001f;
         }
 
-        private void Update()
+        private void LateUpdate()
         {
             if (_simulation == null || _configuration == null)
             {
@@ -375,9 +373,8 @@ namespace ChromaGLS.Settings
                 _openingWeightTarget = 0f;
             }
 
-            // Match the original 60 Hz smoothing while keeping controller response consistent at other headset refresh rates.
             float pointerBlend = 1f - Mathf.Pow(0.6f, deltaTime * 60f);
-            _magneticFieldPosition = FerrofluidInteraction.SmoothPosition(_magneticFieldPosition, _magneticFieldTarget, ref _magneticFieldVelocity, deltaTime);
+            _magneticFieldPosition = FerrofluidInteraction.TrackPosition(_magneticFieldPosition, _magneticFieldTarget, 0.9f * sourceWorldScale, deltaTime);
             float perimeterDelta = Mathf.Repeat((_pointerTarget.x - _pointerSmoothed.x) + 1f, 2f) - 1f;
             _pointerSmoothed.x = Mathf.Repeat((_pointerSmoothed.x + (perimeterDelta * pointerBlend)) + 1f, 2f) - 1f;
             _pointerSmoothed.y = Mathf.Lerp(_pointerSmoothed.y, _pointerTarget.y, pointerBlend);
@@ -396,7 +393,7 @@ namespace ChromaGLS.Settings
                 }
 
                 _hasHand = true;
-                _handPosition = FerrofluidInteraction.SmoothPosition(_handPosition, handTarget, ref _handVelocity, deltaTime);
+                _handPosition = FerrofluidInteraction.TrackPosition(_handPosition, handTarget, 0.9f * sourceWorldScale, deltaTime);
                 if (TryMapMagnet(_handPosition, magnetPlaneNormal, out handPointer, out _, out Vector3 mappedHand, out _, out _))
                 {
                     float normalizedDistance = Vector3.Distance(_handPosition, mappedHand) / Mathf.Max(0.3f * sourceWorldScale, 0.0001f);
@@ -425,7 +422,8 @@ namespace ChromaGLS.Settings
                 _openingWeight,
                 _handPosition,
                 handPointer,
-                _handStrength);
+                _handStrength,
+                FerrofluidGrabPhysics.EvaluateMagnetHeightAmplification(_magnetController.GetActiveTriggerValue()));
         }
 
         private static bool ShouldCreateEffect(bool ferrofluidEnabled)
@@ -841,7 +839,7 @@ namespace ChromaGLS.Settings
         }
 
         // Match the surface shader for magnet picking. The visible mesh is still generated on the GPU.
-        private static Vector3 TransformRenderedPoint(
+        internal static Vector3 TransformRenderedPoint(
             Vector3 position,
             Rect rect,
             Vector2 pivot,

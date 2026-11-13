@@ -26,7 +26,25 @@ namespace ChromaGLS
             typeof(GlsConverterPatches),
             typeof(GlsConverterPatches.LightColorEventBoxConverterPatch),
             typeof(GlsEasingRuntimePatch),
+            typeof(GlsNodeEasingDeserializePatch.RotationPatch),
+            typeof(GlsNodeEasingDeserializePatch.TranslationPatch),
+#if !V1_29_1
+            typeof(GlsNodeEasingDeserializePatch.FloatFxPatch),
+            typeof(HarmonyPatches.GlsSplineTweenFloatFxPatch),
+            typeof(GlsSplineFloatFxEventPatch),
+#endif
+            typeof(HarmonyPatches.GlsSplineTweenTranslationPatch),
+            typeof(HarmonyPatches.GlsSplineTweenRotationPatch),
+            typeof(GlsSplineTranslationEventPatch),
+            typeof(GlsSplineRotationEventPatch),
+            typeof(GlsColorDistancePreparePatch),
             typeof(ChromaGlsRequirementSelectionPatch),
+            typeof(FerrofluidNeonSignPatch),
+#if FERROFLUID_TWEAKS
+            typeof(HarmonyPatches.FerrofluidFpfcTogglePatch),
+            typeof(HarmonyPatches.FerrofluidKeyboardKeyCodePatch),
+            typeof(HarmonyPatches.FerrofluidKeyboardKeyNamePatch),
+#endif
         };
 
         private static Plugin? _instance;
@@ -63,6 +81,8 @@ namespace ChromaGLS
         {
             _ = _updateCheck.CheckOnceAsync();
 
+            ReflectionQualitySettings.Initialize(_config, () => UnityEngine.SystemInfo.graphicsMemorySize);
+            FerrofluidRoomReflections.SetReflectionQuality(_config.ReflectionsQuality);
             ApplyFerrofluidSettings(_config);
 
             InstallPersistentPatches();
@@ -71,6 +91,8 @@ namespace ChromaGLS
             SetFerrofluidBorderEnabled(_config.FerrofluidBorderEnabled);
             SetFerrofluidCubeEnabled(_config.FerrofluidCubeEnabled);
             SetFerrofluidSphereEnabled(_config.FerrofluidSphereEnabled);
+            SetFluidCubeEnabled(_config.FluidCubeEnabled);
+            SetFluidSphereEnabled(_config.FluidSphereEnabled);
         }
 
         [UsedImplicitly]
@@ -88,6 +110,16 @@ namespace ChromaGLS
         internal static void SetFerrofluidBorderEnabled(bool enabled)
         {
             ChromaGlsRequirementEffect.SetFerrofluidEnabled(enabled);
+        }
+
+        internal static void SetFluidCubeEnabled(bool enabled)
+        {
+            FerrofluidEnvironmentObjects.SetFluidCubeEnabled(enabled);
+        }
+
+        internal static void SetFluidSphereEnabled(bool enabled)
+        {
+            FerrofluidEnvironmentObjects.SetFluidSphereEnabled(enabled);
         }
 
         internal static void SetFerrofluidCubeEnabled(bool enabled)
@@ -108,6 +140,7 @@ namespace ChromaGLS
 
         private void ApplyEnabled(bool enabled)
         {
+            Helpers.GlsSplineRuntime.Enabled = enabled;
             if (enabled == _patchesApplied)
             {
                 return;

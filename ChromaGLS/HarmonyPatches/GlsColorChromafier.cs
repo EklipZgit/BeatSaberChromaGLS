@@ -18,7 +18,7 @@ namespace ChromaGLS.HarmonyPatches
     // SetData has no current event argument, so prepare custom colors around HandleColorChangeBeatmapEvent.
     // Replace SetColor only for easing, HSV, or strobe colors that the native fields cannot represent.
     [HarmonyPatch(typeof(LightColorGroupEffect), nameof(LightColorGroupEffect.HandleColorChangeBeatmapEvent))]
-    internal static class GlsColorChromafier
+    internal static partial class GlsColorChromafier
     {
         // Store the extra strobe RGBA track separately because native fields cannot represent phase-specific custom alpha.
         private static readonly Dictionary<LightColorGroupEffect, StrobeColorState> StrobeColorStates = new();
@@ -56,10 +56,19 @@ namespace ChromaGLS.HarmonyPatches
             float? toStrobePulseWidth = hasColorTween && nextEventData != null
                 ? ResolveStrobePulseWidth(nextEventData)
                 : fromStrobePulseWidth;
+            ColorSplineState? splines = PrepareColorSplines(__instance, currentEventData);
             if (intervalEase != null || colorEase != null || strobeColorEase != null || fadeEase != null || hsv
-                || fromStrobePulseWidth.HasValue || toStrobePulseWidth.HasValue)
+                || fromStrobePulseWidth.HasValue || toStrobePulseWidth.HasValue || splines != null)
             {
-                ColorEasingStates[__instance] = new ColorEasingState(intervalEase, colorEase, strobeColorEase, fadeEase, hsv, fromStrobePulseWidth, toStrobePulseWidth);
+                ColorEasingStates[__instance] = new ColorEasingState(
+                    intervalEase,
+                    colorEase,
+                    strobeColorEase,
+                    fadeEase,
+                    hsv,
+                    fromStrobePulseWidth,
+                    toStrobePulseWidth,
+                    splines);
             }
             else
             {
@@ -257,6 +266,7 @@ namespace ChromaGLS.HarmonyPatches
         {
             return HasColorTween(eventData) ? BeatmapEventTransitionType.Interpolate : eventData.transitionType;
         }
+
 #endif
 
 #if !V1_29_1
@@ -277,15 +287,19 @@ namespace ChromaGLS.HarmonyPatches
             int ____lightId)
         {
             ColorEasingStates.TryGetValue(__instance, out ColorEasingState easingState);
-            float intervalT = CalculateColorProgress(in easingState, t);
+            ColorSplineState? splines = easingState.Splines;
+            bool hasSplines = splines is { Channels: not 0 };
+            float inputT = hasSplines ? Mathf.Clamp01(t) : t;
+            float intervalT = CalculateColorProgress(in easingState, inputT);
             bool hasStrobe = ____fromStrobeFrequency > 0f || ____toStrobeFrequency > 0f;
-            float colorT = GetTrackProgress(easingState.Color, t, intervalT);
+            float colorT = GetTrackProgress(easingState.Color, inputT, intervalT);
             float strobeColorT = hasStrobe
-                ? GetTrackProgress(easingState.StrobeColor, t, intervalT)
+                ? GetTrackProgress(easingState.StrobeColor, inputT, intervalT)
                 : intervalT;
+
             // HSV still needs custom rendering when the transition easing is Linear.
             bool hsv = easingState.Hsv;
-            bool hasEasing = intervalT != t || colorT != t || strobeColorT != t;
+            bool hasEasing = intervalT != t || colorT != t || strobeColorT != t || hasSplines;
             if (!hasStrobe && !hasEasing && !hsv)
             {
                 return true;
@@ -302,32 +316,52 @@ namespace ChromaGLS.HarmonyPatches
             // Ease colors and brightness without changing the elapsed time used to calculate strobe phase.
             Color normalFrom = ____fromColor;
             Color normalTo = ____toColor;
-            Color color = hsv
-                ? LerpTrueHsv(normalFrom, normalTo, colorT)
-                : Color.LerpUnclamped(normalFrom, normalTo, colorT);
-            // colorEasing affects RGB only. Brightness follows the interval easing.
-            color.a = Mathf.LerpUnclamped(normalFrom.a, normalTo.a, intervalT);
+            Color color;
+            if (hasSplines)
+            {
+                color = splines!.GetNormal(__instance._usingBoostColors, hsv, inputT, intervalT, colorT);
+            }
+            else
+            {
+                color = hsv
+                    ? LerpTrueHsv(normalFrom, normalTo, colorT)
+                    : Color.LerpUnclamped(normalFrom, normalTo, colorT);
+
+                // colorEasing affects RGB only. Brightness follows the interval easing.
+                color.a = Mathf.LerpUnclamped(normalFrom.a, normalTo.a, intervalT);
+            }
+
             if (!hasStrobe)
             {
                 ____lightManager.SetColorForId(____lightId, color);
                 return false;
             }
 
-            Color strobeColor = customStrobe
-                ? state!.GetColor(strobeColorT, intervalT, ____fromStrobeBrightness, ____toStrobeBrightness, hsv)
-                : WithAlpha(
-                    hsv
-                        ? LerpTrueHsv(normalFrom, normalTo, strobeColorT)
-                        : Color.LerpUnclamped(normalFrom, normalTo, strobeColorT),
-                    Mathf.LerpUnclamped(____fromStrobeBrightness, ____toStrobeBrightness, intervalT));
-            float strobePulseWidth = easingState.GetStrobePulseWidth(t);
+            Color strobeColor;
+            if (hasSplines)
+            {
+                strobeColor = splines!.GetStrobe(__instance._usingBoostColors, hsv, inputT, intervalT, strobeColorT);
+            }
+            else
+            {
+                strobeColor = customStrobe
+                    ? state!.GetColor(strobeColorT, intervalT, ____fromStrobeBrightness, ____toStrobeBrightness, hsv)
+                    : WithAlpha(
+                        hsv
+                            ? LerpTrueHsv(normalFrom, normalTo, strobeColorT)
+                            : Color.LerpUnclamped(normalFrom, normalTo, strobeColorT),
+                        Mathf.LerpUnclamped(____fromStrobeBrightness, ____toStrobeBrightness, intervalT));
+            }
+
+            float strobePulseWidth = easingState.GetStrobePulseWidth(inputT);
             float duration = ____floatTween.duration;
-            float elapsed = t * duration;
+            float elapsed = inputT * duration;
             float elapsedHalf = duration > 0f
                 ? elapsed * elapsed / (2f * duration)
                 : 0f;
             float phase = ((-____fromStrobeFrequency * elapsedHalf) + (____fromStrobeFrequency * elapsed) + (____toStrobeFrequency * elapsedHalf)) % 1f;
             phase = AlignStartingStrobePhase(phase, ____fromStrobeFrequency, ____toStrobeFrequency, duration, ____strobeFade);
+
             // ApplyCustomColors gives a stopped strobe its normal color at that endpoint, so both pulse phases converge on it.
             if (____strobeFade)
             {
@@ -336,7 +370,7 @@ namespace ChromaGLS.HarmonyPatches
             }
 
             // Keep Beat Saber's strict half-cycle boundary when no custom strobe track or pulse width is present.
-            else if (customStrobe || easingState.HasStrobePulseWidth
+            else if (customStrobe || easingState.HasStrobePulseWidth || hasSplines
                 ? phase >= strobePulseWidth
                 : phase > 0.5f)
             {
@@ -347,6 +381,7 @@ namespace ChromaGLS.HarmonyPatches
             ____lightManager.SetColorForId(____lightId, color);
             return false;
         }
+
 #endif
 
         private static float? ResolveStrobePulseWidth(LightColorBeatmapEventData eventData)
@@ -516,7 +551,6 @@ namespace ChromaGLS.HarmonyPatches
             {
                 toStrobeFrequency = 1f / (toStrobeInterval!.Value * oneBeatDuration);
             }
-
         }
 
         // Resolves customData.strobeInterval when a GLS color event activates.
@@ -602,8 +636,10 @@ namespace ChromaGLS.HarmonyPatches
             GlsConverterPatches.TryGetColorDistributionContext(
                 currentEventData,
                 out GlsConverterPatches.EventColorDistributionContext? currentColorDistributionContext);
+
             // Use this light's next event across all boxes for both color tracks, rather than the box-local strobe chain.
             LightColorBeatmapEventData? nextEventData = currentEventData.nextSameTypeEventData as LightColorBeatmapEventData;
+
             // 1.29.1 and 1.34.2 require interpolation on the upcoming node. An Extend node with explicit easing also transitions.
             bool hasTween = HasColorTween(nextEventData);
             Color? rawToColor = hasTween
@@ -634,6 +670,7 @@ namespace ChromaGLS.HarmonyPatches
                     rawNextExplicitStrobeColor,
                     nextColorDistributionContext)
                 : customStrobeColor;
+
             // As with basic-event Chroma, custom alpha multiplies native brightness while HDR RGB stays unscaled.
             Color normalFromColor = fromColor.HasValue
                 ? ComposeCustomColor(oemFromColor, fromColor.Value)
@@ -651,6 +688,7 @@ namespace ChromaGLS.HarmonyPatches
                     ?? rawToColor
                     ?? WithAlpha(oemToColor, 1f)
                 : currentStrobeColor;
+
             // At an endpoint with zero strobe frequency, use its normal RGBA for both pulse phases.
             // This makes the entire transition converge on the normal color without exposing an unused strobeColor or sb.
             bool collapseFromStrobe = hasTween && fromStrobeFrequency <= 0f;
@@ -677,6 +715,7 @@ namespace ChromaGLS.HarmonyPatches
             {
                 toStrobeBrightness = normalToColor.a;
             }
+
 #endif
 #if V1_29_1
             if (currentEventData is ICustomData legacyData
@@ -702,6 +741,7 @@ namespace ChromaGLS.HarmonyPatches
             {
                 LegacyStrobeStates.Remove(__instance);
             }
+
 #endif
             bool requiresCustomStrobeRendering = customStrobeColor.HasValue
                 || nextExplicitStrobeColor.HasValue
@@ -709,6 +749,7 @@ namespace ChromaGLS.HarmonyPatches
                 || (nextColorDistributionContext?.HasNormalColorDistributions == true && !collapseToStrobe)
                 || (fromColor.HasValue && fromColor.Value.a != 1f && !collapseFromStrobe)
                 || (nextStrobeNormalColor.HasValue && nextStrobeNormalColor.Value.a != 1f && !collapseToStrobe);
+
             // Inheriting the distributed normal color does not make strobeColor explicit.
             bool hasExplicitStrobeColor =
                 (customStrobeColor.HasValue
@@ -733,6 +774,7 @@ namespace ChromaGLS.HarmonyPatches
             {
                 StrobeColorStates.Remove(__instance);
             }
+
 #else
             // Modern native SetColor remains authoritative unless phase-specific custom RGB or alpha changes its output.
             if (requiresCustomStrobeRendering)
@@ -749,11 +791,13 @@ namespace ChromaGLS.HarmonyPatches
             {
                 StrobeColorStates.Remove(__instance);
             }
+
 #endif
             if (fromColor.HasValue)
             {
                 // Preserve independent HDR RGB while multiplying each regular endpoint's native brightness by custom alpha.
                 ApplyCustomColor(ref fromField, fromColor.Value);
+
                 // Apply the same RGBA composition to the boost endpoint without replacing its native brightness multiplier.
                 ApplyCustomColor(ref alternativeFromField, fromColor.Value);
 
@@ -761,6 +805,7 @@ namespace ChromaGLS.HarmonyPatches
                 {
                     // The native handler collapses both endpoint pairs for an instant node, so compose the same custom RGBA at both ends.
                     ApplyCustomColor(ref toField, fromColor.Value);
+
                     // Keep the instant boost endpoint's custom RGBA aligned with its native alpha.
                     ApplyCustomColor(ref alternativeToField, fromColor.Value);
                     InvokeOriginalSetColor(__instance, 0f);
@@ -773,6 +818,7 @@ namespace ChromaGLS.HarmonyPatches
             {
                 // Compose the destination RGBA before native interpolation so alpha and brightness tween as one endpoint value.
                 ApplyCustomColor(ref toField, toColor.Value);
+
                 // Apply identical custom RGBA semantics to the destination boost endpoint while retaining its own native alpha.
                 ApplyCustomColor(ref alternativeToField, toColor.Value);
             }
@@ -785,6 +831,7 @@ namespace ChromaGLS.HarmonyPatches
             {
                 InvokeOriginalSetColor(__instance, 0f);
             }
+
 #endif
         }
 
@@ -811,11 +858,14 @@ namespace ChromaGLS.HarmonyPatches
             int ____lightId)
         {
             ColorEasingStates.TryGetValue(__instance, out ColorEasingState easingState);
+            ColorSplineState? splines = easingState.Splines;
+            bool hasSplines = splines is { Channels: not 0 };
             StrobeColorStates.TryGetValue(__instance, out StrobeColorState? colorState);
             LegacyStrobeStates.TryGetValue(__instance, out LegacyStrobeState? state);
+
             // Render the deferred 1.29.1 startup frame at t=0, before applying any elapsed-time progress.
-            float outputT = t;
-            if (colorState is { HasExplicitStrobeColor: true }
+            float outputT = hasSplines ? Mathf.Clamp01(t) : t;
+            if (!hasSplines && colorState is { HasExplicitStrobeColor: true }
                 && state is { Fade: true, InitialFrameRendered: false })
             {
                 outputT = 0f;
@@ -828,17 +878,26 @@ namespace ChromaGLS.HarmonyPatches
             bool hsv = easingState.Hsv;
             Color normalFrom = colorState?.NormalFrom ?? ____fromColor;
             Color normalTo = colorState?.NormalTo ?? ____toColor;
-            Color color = hsv
-                ? LerpTrueHsv(normalFrom, normalTo, colorT)
-                : Color.LerpUnclamped(normalFrom, normalTo, colorT);
-            // Brightness follows the interval easing, independently of colorEasing.
-            color.a = Mathf.LerpUnclamped(normalFrom.a, normalTo.a, intervalT);
+            Color color;
+            if (hasSplines)
+            {
+                color = splines!.GetNormal(__instance._usingBoostColors, hsv, outputT, intervalT, colorT);
+            }
+            else
+            {
+                color = hsv
+                    ? LerpTrueHsv(normalFrom, normalTo, colorT)
+                    : Color.LerpUnclamped(normalFrom, normalTo, colorT);
+
+                // Brightness follows the interval easing, independently of colorEasing.
+                color.a = Mathf.LerpUnclamped(normalFrom.a, normalTo.a, intervalT);
+            }
 
             if (____fromStrobeFrequency <= 0f && ____toStrobeFrequency <= 0f)
             {
                 // Native 1.29.1 already handles non-strobe custom RGB. Replace it only when easing or HSV changes the output.
                 SetLegacyFogCompensation(__instance, 1f);
-                if (intervalT == outputT && colorT == outputT && !hsv)
+                if (intervalT == outputT && colorT == outputT && !hsv && !hasSplines)
                 {
                     return true;
                 }
@@ -858,6 +917,7 @@ namespace ChromaGLS.HarmonyPatches
                 float elapsedHalf = duration > 0f
                     ? elapsed * elapsed / (2f * duration)
                     : 0f;
+
                 // Extension callbacks restart the native tween at t=0, so add the completed predecessor phase to keep cycling continuous.
                 float phase = (state?.PhaseOffset ?? 0f)
                     - (____fromStrobeFrequency * elapsedHalf)
@@ -873,13 +933,22 @@ namespace ChromaGLS.HarmonyPatches
                     state?.PhaseOffset ?? 0f);
 
                 float strobeColorT = GetTrackProgress(easingState.StrobeColor, outputT, intervalT);
-                Color strobeColor = colorState is { RequiresCustomRendering: true } && state != null
-                    ? colorState.GetColor(strobeColorT, intervalT, state.FromBrightness, state.ToBrightness, hsv)
-                    : WithAlpha(
-                        hsv
-                            ? LerpTrueHsv(normalFrom, normalTo, strobeColorT)
-                            : Color.LerpUnclamped(normalFrom, normalTo, strobeColorT),
-                        strobeBrightness);
+                Color strobeColor;
+                if (hasSplines)
+                {
+                    strobeColor = splines!.GetStrobe(__instance._usingBoostColors, hsv, outputT, intervalT, strobeColorT);
+                }
+                else
+                {
+                    strobeColor = colorState is { RequiresCustomRendering: true } && state != null
+                        ? colorState.GetColor(strobeColorT, intervalT, state.FromBrightness, state.ToBrightness, hsv)
+                        : WithAlpha(
+                            hsv
+                                ? LerpTrueHsv(normalFrom, normalTo, strobeColorT)
+                                : Color.LerpUnclamped(normalFrom, normalTo, strobeColorT),
+                            strobeBrightness);
+                }
+
                 // As on newer versions, a stopped strobe uses its normal RGBA for both pulse phases.
                 if (state is { Fade: true })
                 {
@@ -898,6 +967,7 @@ namespace ChromaGLS.HarmonyPatches
                 ? 2f
                 : 1f;
             SetLegacyFogCompensation(__instance, legacyFogCompensation);
+
             // Avoid reflection, boxing, and an argument-array allocation in the legacy per-frame path.
             ____lightManager.SetColorForId(____lightId, color);
 
@@ -1010,6 +1080,7 @@ namespace ChromaGLS.HarmonyPatches
                     PhaseOffset = isExtension && HasInterval && previousDuration > 0f
                         ? Mathf.Repeat(PhaseOffset + (((FromFrequency + ToFrequency) * previousDuration) / 2f), 1f)
                         : 0f;
+
                     // A new tween interval needs one fresh synthetic t=0 startup frame.
                     InitialFrameRendered = false;
                 }
@@ -1023,6 +1094,7 @@ namespace ChromaGLS.HarmonyPatches
                 HasInterval = true;
             }
         }
+
 #endif
 
         private static float ResolveStrobeBrightness(LightColorBeatmapEventData eventData)
@@ -1082,7 +1154,8 @@ namespace ChromaGLS.HarmonyPatches
                 Func<float, float>? strobeFade,
                 bool hsv,
                 float? fromStrobePulseWidth,
-                float? toStrobePulseWidth)
+                float? toStrobePulseWidth,
+                ColorSplineState? splines)
             {
                 Interval = interval;
                 Color = color;
@@ -1091,6 +1164,7 @@ namespace ChromaGLS.HarmonyPatches
                 Hsv = hsv;
                 FromStrobePulseWidth = fromStrobePulseWidth;
                 ToStrobePulseWidth = toStrobePulseWidth;
+                Splines = splines;
             }
 
             public Func<float, float>? Interval { get; }
@@ -1102,6 +1176,8 @@ namespace ChromaGLS.HarmonyPatches
             public Func<float, float>? StrobeFade { get; }
 
             public bool Hsv { get; }
+
+            public ColorSplineState? Splines { get; }
 
             public float? FromStrobePulseWidth { get; }
 

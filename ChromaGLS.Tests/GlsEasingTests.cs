@@ -515,19 +515,33 @@ internal sealed class GlsEasingTests
     // Replace only scene/native services; the plugin event patches, native handler and FloatTween all execute normally.
     private void WithColorEffect(Action<object, object> run)
     {
+        WithColorEffectEvents(Array.Empty<object>(), run);
+    }
+
+    private void WithColorEffectEvents(object[] events, Action<object, object> run)
+    {
         Harmony services = new("ChromaGLS.Tests.EasingServices");
         Type effectType = AccessTools.TypeByName("LightColorGroupEffect");
         Type managerType = AccessTools.TypeByName("LightWithIdManager");
         Type tweenManagerType = AccessTools.TypeByName("SongTimeTweeningManager");
         Type nativeTweenManager = AccessTools.TypeByName("Tweening.TweeningManager");
-        object effect = TestHostCompat.GetUninitializedObject(effectType);
+        object? effect = null;
+        object? controller = null;
         try
         {
             // Install scene-service interception within the cleanup scope so a failed fixture cannot leak test patches.
+            services.CreateClassProcessor(typeof(CustomData).Assembly.GetType(
+                "CustomJSONData.CustomBeatmap.CustomBeatmapDataSortedListForTypeAndIds", true)!).Patch();
             services.Patch(effectType.GetMethod("GetColor", All), prefix: new HarmonyMethod(typeof(GlsEasingTests), nameof(GetOemColor)));
             services.Patch(managerType.GetMethod("SetColorForId", All), prefix: new HarmonyMethod(typeof(GlsEasingTests), nameof(CaptureColor)));
             services.Patch(nativeTweenManager.GetMethod("ResumeTween", All), prefix: new HarmonyMethod(typeof(GlsEasingTests), nameof(SkipResume)));
             services.Patch(nativeTweenManager.GetMethod("KillAllTweens", All), prefix: new HarmonyMethod(typeof(GlsEasingTests), nameof(SkipResume)));
+            Type colorManagerType = AccessTools.TypeByName("ColorManager");
+            services.Patch(
+                colorManagerType.GetMethod(
+                    "ColorForType", All, null,
+                    [AccessTools.TypeByName("EnvironmentColorType"), typeof(bool)], null),
+                prefix: new HarmonyMethod(typeof(GlsEasingTests), nameof(GetPaletteColor)));
             object lightManager = TestHostCompat.GetUninitializedObject(managerType);
             // The 1.29.1 postfix resolves legacy tube-fog state through LightWithIdManager._lights;
             // an empty registry keeps the stubbed light id out of range so that lookup is a no-op.
@@ -537,15 +551,40 @@ internal sealed class GlsEasingTests
                 lights.SetValue(lightManager, Array.CreateInstance(lights.FieldType.GetElementType()!, 0));
             }
 
-            effectType.GetField("_lightManager", All)!.SetValue(effect, lightManager);
-            effectType.GetField("_tweeningManager", All)!.SetValue(effect, TestHostCompat.GetUninitializedObject(tweenManagerType));
+            Type dataType = typeof(CustomData).Assembly.GetType(
+                "CustomJSONData.CustomBeatmap.CustomBeatmapData", true)!;
+            ConstructorInfo dataConstructor = dataType.GetConstructors().Single();
+            object data = dataConstructor.Invoke(dataConstructor.GetParameters().Select(parameter => parameter.Name switch
+            {
+                "numberOfLines" => (object)4,
+                "version2_6_0AndEarlier" => false,
+                "customData" or "beatmapCustomData" or "levelCustomData" => new CustomData(),
+                "version" => new Version(3, 3, 0),
+                _ => throw new InvalidOperationException($"Unsupported beatmap constructor parameter: {parameter.Name}"),
+            }).ToArray());
+            dataType.GetProperty("updateAllBeatmapDataOnInsert")!.SetValue(data, true);
+            foreach (object node in events)
+            {
+                dataType.GetMethod(
+                    "InsertBeatmapEventData", All, null,
+                    [AccessTools.TypeByName("BeatmapEventData")], null)!.Invoke(data, [node]);
+            }
+            Type controllerType = AccessTools.TypeByName("BeatmapCallbacksController");
+            object controllerInit = Activator.CreateInstance(
+                controllerType.GetNestedType("InitData")!, data, float.MinValue, false)!;
+            controller = Activator.CreateInstance(controllerType, controllerInit)!;
             Type bpmType = effectType.GetField("_bpmController", All)!.FieldType;
-            effectType.GetField("_bpmController", All)!.SetValue(effect, TestHostCompat.CreateProxy(bpmType, typeof(BpmProxy)));
-            MethodInfo setColor = effectType.GetMethod("SetColor", All)!;
-            Type tweenType = AccessTools.TypeByName("Tweening.FloatTween");
-            object tween = tweenType.GetConstructors().Single(ctor => ctor.GetParameters().Length == 6)
-                .Invoke([0f, 1f, setColor.CreateDelegate(typeof(Action<float>), effect), 1f, Enum.Parse(convert.ReturnType, "Linear"), 0f]);
-            effectType.GetField("_floatTween", All)!.SetValue(effect, tween);
+            Type initType = effectType.GetNestedType("InitData")!;
+            object init = Activator.CreateInstance(initType, 1, 0, 0)!;
+            effect = Activator.CreateInstance(
+                effectType,
+                init,
+                lightManager,
+                TestHostCompat.GetUninitializedObject(tweenManagerType),
+                TestHostCompat.GetUninitializedObject(colorManagerType),
+                controller,
+                TestHostCompat.CreateProxy(bpmType, typeof(BpmProxy)))!;
+            object tween = effectType.GetField("_floatTween", All)!.GetValue(effect)!;
             run(effect, tween);
         }
         finally
@@ -553,13 +592,26 @@ internal sealed class GlsEasingTests
             // Native Cleanup would enter Unity's tween manager without the service stub; now its real production postfix is exercised too.
             try
             {
-                effectType.GetMethod("Cleanup", All)!.Invoke(effect, null);
+                if (effect != null)
+                {
+                    effectType.GetMethod("Cleanup", All)!.Invoke(effect, null);
+                }
+                if (controller != null)
+                {
+                    controller.GetType().GetMethod("Dispose", All)!.Invoke(controller, null);
+                }
             }
             finally
             {
                 services.UnpatchSelf();
             }
         }
+    }
+
+    private static bool GetPaletteColor(ref Color __result)
+    {
+        __result = Color.white;
+        return false;
     }
 
     // Supply plain V3 custom metadata to the actual handler; no production easing evaluator or color callback is replaced by the test.

@@ -81,13 +81,21 @@ All properties below belong to color-event `customData` unless noted otherwise.
 | `strobeColor` | `[r,g,b]` or `[r,g,b,a]` | Strobe RGBA endpoint. Falls back to normal color; omitted alpha is `1`. |
 | `colorDistributions` | Array of instruction strings | Spatial normal-color/alpha offsets, on the box, event, or both. |
 | `strobeColorDistributions` | Array of instruction strings | Independent spatial strobe-color/alpha offsets, on the box, event, or both. |
-| `easing` | Integer `1`-`30`, `100`-`102` | Incoming transition easing. Omitted/invalid values leave native timing in place. |
-| `colorEasing` | Integer `0`-`30`, `100`-`102` | Incoming normal RGB curve. Defaults to the interval easing. |
-| `strobeColorEasing` | Integer `0`-`30`, `100`-`102` | Incoming strobe RGB curve. Defaults to the interval easing. |
+| `easing` | Abbreviation or integer `1`-`30`, `100`-`102` | Incoming transition easing. Omitted/invalid values leave native timing in place. |
+| `colorEasing` | Abbreviation or integer `0`-`30`, `100`-`102` | Incoming normal RGB curve. Defaults to the interval easing. |
+| `strobeColorEasing` | Abbreviation or integer `0`-`30`, `100`-`102` | Incoming strobe RGB curve. Defaults to the interval easing. |
 | `easingType` | `"HSV"` or `"RGB"` | Incoming color interpolation model. Default is RGB. |
 | `strobeInterval` | Positive number | Beats per strobe cycle, overriding native `f`. |
 | `strobePulseWidth` | Number clamped to `[0,1]` | Normal-phase fraction for hard strobes, or strobe peak position for fades. Default `0.5`. |
-| `strobeEasing` | Integer `0`-`30`, `100`-`102` | Active node's pulse fade curve. Default InOutCubic (`9`). Requires `sf: 1` to affect output. |
+| `strobeEasing` | Abbreviation or integer `0`-`30`, `100`-`102` | Active node's pulse fade curve. Default InOutCubic (`IO^3`). Requires `sf: 1` to affect output. |
+
+V3 easing metadata accepts ChroMapper's canonical abbreviations (`L`, `I^2`, `IO^3`, `IOTBk`, `IOBk`, and so on) or the equivalent integers. V3 rotation, translation, and FloatFX nodes also honor `customData.easing`: ChroMapper writes a supported fallback into the native `e` field (`i` for FloatFX), and this metadata selects the actual curve. V4 lightshow loading does not apply these overrides.
+
+V3 supports Catmull-Rom splines for translation, rotation, FloatFX, and color tracks:
+- `Cat` (`103`, `splineCatmullRom`) uses the time-paced uniform spline.
+- `CatS` (`104`, `splineCatmullRomSmoothed`) preserves that spatial curve and smooths translation speed using a shared distance mapping across the light's axes. For rotation, FloatFX, and colors it behaves like `Cat`.
+
+Both modes use neighboring generated nodes after distributions and holds are resolved, matching ChroMapper. Translation distance tables are prepared when the effect is created, not during playback. The native fallback still applies without ChromaGLS or when it is disabled.
 
 For the practical difference between **RGB**, **alpha**, and **GLS brightness**, read the [color and bloom guide](README-Colors.md). It includes screenshots and recipes for saturated surfaces, white surfaces, and controlled fog bloom.
 
@@ -217,7 +225,7 @@ In both modes:
 
 #### Normal versus strobe brightness
 
-Normal distributions start from the event's authored `color`, or its environment color when absent. Strobe distributions start from `strobeColor`, falling back to the **undistributed** authored main color (or environment color), then apply only `strobeColorDistributions`. Normal distributions do not leak into the strobe fallback.
+Normal distributions start from the event's authored `color`, or its environment color when absent. Strobe resolution has three cases. An explicit `strobeColor` applies only `strobeColorDistributions` to that explicit base. Without `strobeColor`, valid `strobeColorDistributions` apply only to the **undistributed** main base color. With neither a `strobeColor` override nor strobe distributions, the strobe inherits the fully distributed main color.
 
 After the corresponding distributions, normal alpha multiplies the effective normal GLS brightness (including applicable brightness distribution), and strobe alpha multiplies `sb`. Neither phase's light level is applied to the other phase.
 

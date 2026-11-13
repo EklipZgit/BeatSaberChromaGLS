@@ -1,0 +1,8 @@
+<vertical id='light-row' preferred-width='96' preferred-height='14' min-height='14' flexible-height='0' spacing='1' horizontal-fit='Unconstrained' vertical-fit='Unconstrained' child-align='UpperLeft' child-control-width='true' child-expand-width='true' child-control-height='true' child-expand-height='false'>
+    <text text='~light-label' font-size='4' preferred-height='5' min-height='5' flexible-height='0' word-wrapping='false'/>
+    <horizontal spacing='2' preferred-height='7' min-height='7' flexible-height='0' child-control-width='true' child-expand-width='false' child-control-height='true' child-expand-height='false'>
+        <bool-setting text='Enabled' value='light-enabled' apply-on-change='true' preferred-width='44' min-width='44' flexible-width='0'/>
+        <button text='Tweak' on-click='light-tweak' preferred-width='22' min-width='22' flexible-width='0'/>
+        <button text='Remove' on-click='light-remove' preferred-width='24' min-width='24' flexible-width='0'/>
+    </horizontal>
+</vertical>

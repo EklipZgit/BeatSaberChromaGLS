@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using ChromaGLS.Helpers;
 using HarmonyLib;
 #if V1_29_1
 using UnityEngine;
@@ -29,7 +30,6 @@ namespace ChromaGLS.HarmonyPatches
             { 1, new ColorCurve(EaseType.InQuad) },
             { 2, new ColorCurve(EaseType.OutQuad) },
             { 3, new ColorCurve(EaseType.InOutQuad) },
-
             { 4, new ColorCurve(EaseType.InSine) },
             { 5, new ColorCurve(EaseType.OutSine) },
             { 6, new ColorCurve(EaseType.InOutSine) },
@@ -44,7 +44,6 @@ namespace ChromaGLS.HarmonyPatches
             { 13, new ColorCurve(EaseType.InQuint) },
             { 14, new ColorCurve(EaseType.OutQuint) },
             { 15, new ColorCurve(EaseType.InOutQuint) },
-
             { 16, new ColorCurve(EaseType.InExpo) },
             { 17, new ColorCurve(EaseType.OutExpo) },
             { 18, new ColorCurve(EaseType.InOutExpo) },
@@ -71,6 +70,39 @@ namespace ChromaGLS.HarmonyPatches
             { 101, new ColorCurve(EaseType.BeatSaberInOutElastic) },
             { 102, new ColorCurve(EaseType.BeatSaberInOutBounce) },
 #endif
+        };
+
+        private static readonly Dictionary<string, int> EasingIdByName = new(StringComparer.Ordinal)
+        {
+            { "N", -1 }, { "L", 0 },
+            { "I^2", 1 }, { "O^2", 2 }, { "IO^2", 3 },
+            { "ISn", 4 }, { "OSn", 5 }, { "IOSn", 6 },
+            { "I^3", 7 }, { "O^3", 8 }, { "IO^3", 9 },
+            { "I^4", 10 }, { "O^4", 11 }, { "IO^4", 12 },
+            { "I^5", 13 }, { "O^5", 14 }, { "IO^5", 15 },
+            { "IEx", 16 }, { "OEx", 17 }, { "IOEx", 18 },
+            { "ICr", 19 }, { "OCr", 20 }, { "IOCr", 21 },
+            { "IBk", 22 }, { "OBk", 23 }, { "IOTBk", 24 },
+            { "IEl", 25 }, { "OEl", 26 }, { "IOTEl", 27 },
+            { "IBo", 28 }, { "OBo", 29 }, { "IOTBo", 30 },
+            { "IOBk", 100 }, { "IOEl", 101 }, { "IOBo", 102 },
+            { "Cat", 103 }, { "CatS", 104 },
+            { "easeStep", -1 }, { "easeNone", -1 }, { "easeLinear", 0 },
+            { "easeInQuad", 1 }, { "easeOutQuad", 2 }, { "easeInOutQuad", 3 },
+            { "easeInSine", 4 }, { "easeOutSine", 5 }, { "easeInOutSine", 6 },
+            { "easeInCubic", 7 }, { "easeOutCubic", 8 }, { "easeInOutCubic", 9 },
+            { "easeInQuart", 10 }, { "easeOutQuart", 11 }, { "easeInOutQuart", 12 },
+            { "easeInQuint", 13 }, { "easeOutQuint", 14 }, { "easeInOutQuint", 15 },
+            { "easeInExpo", 16 }, { "easeOutExpo", 17 }, { "easeInOutExpo", 18 },
+            { "easeInCirc", 19 }, { "easeOutCirc", 20 }, { "easeInOutCirc", 21 },
+            { "easeInBack", 22 }, { "easeOutBack", 23 }, { "easeInOutBack", 24 },
+            { "easeInElastic", 25 }, { "easeOutElastic", 26 }, { "easeInOutElastic", 27 },
+            { "easeInBounce", 28 }, { "easeOutBounce", 29 }, { "easeInOutBounce", 30 },
+            { "easeBeatSaberInOutBack", 100 },
+            { "easeBeatSaberInOutElastic", 101 },
+            { "easeBeatSaberInOutBounce", 102 },
+            { "splineCatmullRom", 103 },
+            { "splineCatmullRomSmoothed", 104 },
         };
 
         private static readonly Dictionary<EaseType, Func<float, float>> AdditionalNativeCurves = CreateAdditionalNativeCurves();
@@ -100,31 +132,56 @@ namespace ChromaGLS.HarmonyPatches
             return valid;
         }
 
-        // Independent color tracks accept Linear because an absent key inherits the interval curve.
+        internal static bool TryParseEasingId(object? raw, out int id)
+        {
+            id = 0;
+            switch (raw)
+            {
+                case string text:
+                    return EasingIdByName.TryGetValue(text, out id);
+
+                case sbyte or byte or short or ushort or int or uint or long or ulong
+                    or float or double or decimal:
+                    if (raw is decimal precise && precise != decimal.Truncate(precise))
+                    {
+                        return false;
+                    }
+
+                    double value = Convert.ToDouble(raw, CultureInfo.InvariantCulture);
+                    if (!(value is -1 or >= 0 and <= 30 or >= 100 and <= 104)
+                        || value != Math.Truncate(value))
+                    {
+                        return false;
+                    }
+
+                    id = (int)value;
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        internal static bool IsSupportedCurveId(int id) => id == -1 || Curves.ContainsKey(id);
+
         private static bool TryGetCustomCurve(object? raw, out ColorCurve? curve, bool includeLinear = false)
         {
             curve = null;
-            if (raw is not (sbyte or byte or short or ushort or int or uint or long or ulong or float or double or decimal))
-            {
-                return false;
-            }
-
-            // Check the decimal before converting to double, which can round a small fractional part away.
-            if (raw is decimal precise && precise != decimal.Truncate(precise))
-            {
-                return false;
-            }
-
-            double value = Convert.ToDouble(raw, CultureInfo.InvariantCulture);
-            return value >= (includeLinear ? 0d : 1d) && value <= 102d && value == Math.Truncate(value)
-                && Curves.TryGetValue((int)value, out curve);
+            return TryParseEasingId(raw, out int id)
+                && id >= (includeLinear ? 0 : 1)
+                && Curves.TryGetValue(id, out curve);
         }
 
         [HarmonyPostfix]
         private static void Postfix(_EaseType __0, ref EaseType __result)
         {
             int id = (int)__0;
-            if (id >= 4 && id <= 18)
+            if (GlsSplineMath.IsCatmullRom(id))
+            {
+                // Spline markers stay as dedicated runtime ids; no native enum maps to them.
+                __result = (EaseType)id;
+            }
+            else if (id >= 4 && id <= 18)
             {
                 __result = Curves[id].NativeType;
             }

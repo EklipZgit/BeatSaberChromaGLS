@@ -18,7 +18,7 @@ namespace ChromaGLS.Settings
                 Roundness = FerrofluidEnvironmentObjects.EvaluateRoundness(shape, config),
                 YawDegrees = FerrofluidEnvironmentObjects.EvaluateChartYawDegrees(shape, config),
                 BulgeRadius = Mathf.Clamp(config.BulgeRadius, 0.1f, 3.2f) * sourceWorldScale,
-                BulgeHeight = Mathf.Clamp(config.BulgeHeight, 0f, 0.2f) * sourceWorldScale,
+                BulgeHeight = FerrofluidGpuSimulation.EvaluateBulgeHeight(shape, config.BulgeHeight, sourceWorldScale),
                 SpikeMoundCurvature = Mathf.Clamp(config.FerrofluidSpikeMoundCurvature, 1f, 4f),
                 SpikeHeightRadius = Mathf.Clamp(config.FerrofluidSpikeHeightRadius, 0.1f, 3.2f) * sourceWorldScale,
                 SpikeTiltRadius = Mathf.Clamp(config.FerrofluidSpikeTiltRadius, 0.1f, 3.2f) * sourceWorldScale,
@@ -58,7 +58,8 @@ namespace ChromaGLS.Settings
             Vector4 site,
             Vector3 magnetPosition,
             float magneticFieldStrength,
-            out float apexSharpening)
+            out float apexSharpening,
+            float heightAmplification = 1f)
         {
             Vector3 sitePosition = new(site.x, site.y, site.z);
             Vector3 siteDirection = sitePosition.normalized;
@@ -68,9 +69,11 @@ namespace ChromaGLS.Settings
             Vector3 fieldVector = magnetPosition - sitePosition;
             float fieldDistance = fieldVector.magnitude;
             Vector3 fieldDirection = fieldVector / Mathf.Max(fieldDistance, 0.000001f);
+            float radiusScale = 1f + Mathf.Clamp01((heightAmplification - 1f) / FerrofluidGrabPhysics.MagnetHeightBoost);
+            fieldDistance /= radiusScale;
             float fieldFacing = Vector3.Dot(surfaceNormal, fieldDirection);
             Vector3 tangentField = fieldVector - (surfaceNormal * Vector3.Dot(fieldVector, surfaceNormal));
-            float tangentFieldDistance = tangentField.magnitude;
+            float tangentFieldDistance = tangentField.magnitude / radiusScale;
 
             float heightFieldDistance = Mathf.Max(fieldDistance - settings.DeadZoneRadius, 0f);
             float normalizedHeightFieldDistance = heightFieldDistance / settings.SpikeHeightRadius;
@@ -82,6 +85,7 @@ namespace ChromaGLS.Settings
             float frontUnitResponse = Mathf.Max(fieldFacing, 0f) * compactEnvelope * exponentialPeak;
             float frontFieldResponse = heightFieldStrength * frontUnitResponse;
             float frontHeightGain = settings.HeightGain
+                * heightAmplification
                 * heightFieldStrength
                 * EvaluateSpikeMoundResponse(frontUnitResponse, settings.SpikeMoundCurvature);
             float primitiveBackHeightRadius = settings.SpikeHeightRadius * settings.FlattenRadius;
@@ -90,8 +94,9 @@ namespace ChromaGLS.Settings
                 * Mathf.Pow(
                     Mathf.Max(0f, 1f - normalizedBackHeightDistance),
                     settings.FlattenExponent * (settings.BackHeightFalloffExponent / 2.65f));
-            float backHeightLoss = settings.BackHeightLoss * Mathf.Max(-fieldFacing, 0f) * backFieldResponse;
-            float primitiveMaximumHeight = Mathf.Min(settings.MaximumHeight, 1.37f);
+            float backHeightLoss = settings.BackHeightLoss * heightAmplification * Mathf.Max(-fieldFacing, 0f) * backFieldResponse;
+            float primitiveMaximumHeight = 0.44f
+                + (heightAmplification * (Mathf.Min(settings.MaximumHeight, 1.37f) - 0.44f));
             float heightTarget = Mathf.Clamp(
                 0.44f + frontHeightGain - backHeightLoss,
                 0.03f,
@@ -242,7 +247,8 @@ namespace ChromaGLS.Settings
             FerrofluidSurfaceShape shape,
             Vector4 site,
             Vector3 magnetPosition,
-            float magneticFieldStrength)
+            float magneticFieldStrength,
+            float heightAmplification = 1f)
         {
             Vector3 sitePosition = new(site.x, site.y, site.z);
             Vector3 siteDirection = sitePosition.normalized;
@@ -252,15 +258,27 @@ namespace ChromaGLS.Settings
             Vector3 fieldVector = magnetPosition - sitePosition;
             float fieldDistance = fieldVector.magnitude;
             float fieldFacing = Vector3.Dot(surfaceNormal, fieldVector / Mathf.Max(fieldDistance, 0.000001f));
-            float bulgeFieldDistance = Mathf.Max(fieldDistance - settings.DeadZoneRadius, 0f);
             float bulgeFieldStrength = Mathf.Min(magneticFieldStrength, settings.HeightStrengthCap);
-            float bulgeFieldEnvelope = bulgeFieldStrength
-                * BulgeEnvelope(bulgeFieldDistance / settings.BulgeRadius, settings.HeightFalloffExponent);
+            float bulgeRadial = Mathf.Exp(
+                -0.5f
+                * Mathf.Max(settings.HeightFalloffExponent, 0.25f)
+                * fieldVector.sqrMagnitude
+                / (settings.BulgeRadius * settings.BulgeRadius));
+            float bulgeOuter = 0.9f * ((settings.BulgeRadius * 1.5f) + settings.DeadZoneRadius);
+
+            // One radial bell avoids a narrow facing-driven crest on a wider mound. The outer
+            // blend feathers the skirt 10% inside the old radius, and the facing blend gates only
+            // the back-side tail so the front keeps a coherent profile.
+            float bulgeOuterBlend = QuinticEase(Mathf.Clamp01((bulgeOuter - fieldDistance) / (bulgeOuter * 0.25f)));
+            float bulgeBackBlend = QuinticEase(Mathf.Clamp01(1f + fieldFacing));
             float bulgeHeight = settings.BulgeHeight
-                * Mathf.Max(fieldFacing, 0f)
-                * bulgeFieldEnvelope
+                * bulgeRadial
+                * bulgeOuterBlend
+                * bulgeBackBlend
+                * bulgeFieldStrength
                 * (shape == FerrofluidSurfaceShape.Sphere ? settings.SphereBulgeScale : 1f);
-            return surfaceNormal * bulgeHeight;
+
+            return surfaceNormal * (bulgeHeight * heightAmplification);
         }
 
         internal static Vector3 EvaluatePrimitiveBulgeFrame(
@@ -270,7 +288,8 @@ namespace ChromaGLS.Settings
             Vector4[] sites,
             int[] texelOwners,
             Vector3 magnetPosition,
-            float magneticFieldStrength)
+            float magneticFieldStrength,
+            float heightAmplification = 1f)
         {
             EvaluateFrameTexels(
                 heightUv,
@@ -281,10 +300,10 @@ namespace ChromaGLS.Settings
                 out int owner11,
                 out float fracX,
                 out float fracY);
-            Vector3 offset00 = EvaluateSiteBulgeOffset(settings, shape, sites[owner00], magnetPosition, magneticFieldStrength);
-            Vector3 offset10 = EvaluateSiteBulgeOffset(settings, shape, sites[owner10], magnetPosition, magneticFieldStrength);
-            Vector3 offset01 = EvaluateSiteBulgeOffset(settings, shape, sites[owner01], magnetPosition, magneticFieldStrength);
-            Vector3 offset11 = EvaluateSiteBulgeOffset(settings, shape, sites[owner11], magnetPosition, magneticFieldStrength);
+            Vector3 offset00 = EvaluateSiteBulgeOffset(settings, shape, sites[owner00], magnetPosition, magneticFieldStrength, heightAmplification);
+            Vector3 offset10 = EvaluateSiteBulgeOffset(settings, shape, sites[owner10], magnetPosition, magneticFieldStrength, heightAmplification);
+            Vector3 offset01 = EvaluateSiteBulgeOffset(settings, shape, sites[owner01], magnetPosition, magneticFieldStrength, heightAmplification);
+            Vector3 offset11 = EvaluateSiteBulgeOffset(settings, shape, sites[owner11], magnetPosition, magneticFieldStrength, heightAmplification);
             return Vector3.Lerp(
                 Vector3.Lerp(offset00, offset10, fracX),
                 Vector3.Lerp(offset01, offset11, fracX),
@@ -307,7 +326,7 @@ namespace ChromaGLS.Settings
             Vector2 heightUv = FoldChartUv(chartUv);
             Vector3 basePosition = FerrofluidEnvironmentObjects.EvaluateSurfacePosition(
                 shape,
-                chartUv,
+                heightUv,
                 settings.Roundness,
                 settings.YawDegrees);
             Vector3 heightSurfacePoint = FerrofluidEnvironmentObjects.EvaluateSurfacePosition(
@@ -346,7 +365,8 @@ namespace ChromaGLS.Settings
             int[] texelOwners,
             Vector3 magnetPosition,
             float magneticFieldStrength,
-            Config config)
+            Config config,
+            float heightAmplification = 1f)
         {
             EvaluateDeformationFrame(
                 settings,
@@ -366,7 +386,8 @@ namespace ChromaGLS.Settings
                 sites,
                 texelOwners,
                 magnetPosition,
-                magneticFieldStrength);
+                magneticFieldStrength,
+                heightAmplification);
             return EvaluateDisplacedPositionWithFrame(
                 settings,
                 shape,
@@ -423,13 +444,13 @@ namespace ChromaGLS.Settings
         {
             float epsilon = 2f / FerrofluidGpuSimulation.PrimitiveHeightMapSize;
             Vector3 previousPerimeter = FerrofluidEnvironmentObjects.EvaluateSurfacePosition(
-                shape, chartUv - new Vector2(epsilon, 0f), settings.Roundness, settings.YawDegrees);
+                shape, FoldChartUv(chartUv - new Vector2(epsilon, 0f)), settings.Roundness, settings.YawDegrees);
             Vector3 nextPerimeter = FerrofluidEnvironmentObjects.EvaluateSurfacePosition(
-                shape, chartUv + new Vector2(epsilon, 0f), settings.Roundness, settings.YawDegrees);
+                shape, FoldChartUv(chartUv + new Vector2(epsilon, 0f)), settings.Roundness, settings.YawDegrees);
             Vector3 previousCross = FerrofluidEnvironmentObjects.EvaluateSurfacePosition(
-                shape, chartUv - new Vector2(0f, epsilon), settings.Roundness, settings.YawDegrees);
+                shape, FoldChartUv(chartUv - new Vector2(0f, epsilon)), settings.Roundness, settings.YawDegrees);
             Vector3 nextCross = FerrofluidEnvironmentObjects.EvaluateSurfacePosition(
-                shape, chartUv + new Vector2(0f, epsilon), settings.Roundness, settings.YawDegrees);
+                shape, FoldChartUv(chartUv + new Vector2(0f, epsilon)), settings.Roundness, settings.YawDegrees);
             Vector3 baseFinite = Vector3.Cross(nextPerimeter - previousPerimeter, nextCross - previousCross);
             Vector3 analyticNormal = FerrofluidEnvironmentObjects.EvaluateSurfaceNormal(
                 shape,
@@ -489,9 +510,71 @@ namespace ChromaGLS.Settings
                 magnetPosition,
                 magneticFieldStrength,
                 config);
-            return finiteNormal.sqrMagnitude > 0.000000001f
-                ? finiteNormal.normalized * winding
-                : analyticNormal;
+            if (finiteNormal.sqrMagnitude > 0.000000001f)
+                return finiteNormal.normalized * winding;
+
+            Vector3 center = FerrofluidEnvironmentObjects.EvaluateSurfacePosition(
+                shape,
+                FoldChartUv(chartUv),
+                settings.Roundness,
+                settings.YawDegrees);
+            Vector3 reference = Mathf.Abs(analyticNormal.y) < 0.9f ? Vector3.up : Vector3.right;
+            Vector3 tangent = Vector3.Cross(analyticNormal, reference).normalized;
+            Vector3 bitangent = Vector3.Cross(analyticNormal, tangent);
+            float step = 1f / FerrofluidGpuSimulation.PrimitiveHeightMapSize;
+            Vector2 minusT = FerrofluidEnvironmentObjects.EvaluateSurfaceUv(center - (tangent * step), settings.YawDegrees);
+            Vector2 plusT = FerrofluidEnvironmentObjects.EvaluateSurfaceUv(center + (tangent * step), settings.YawDegrees);
+            Vector2 minusB = FerrofluidEnvironmentObjects.EvaluateSurfaceUv(center - (bitangent * step), settings.YawDegrees);
+            Vector2 plusB = FerrofluidEnvironmentObjects.EvaluateSurfaceUv(center + (bitangent * step), settings.YawDegrees);
+            Vector3 left = EvaluateDisplacedPosition(
+                settings,
+                shape,
+                minusT,
+                sites,
+                deformations,
+                apexSharpenings,
+                springScales,
+                texelOwners,
+                magnetPosition,
+                magneticFieldStrength,
+                config);
+            Vector3 right = EvaluateDisplacedPosition(
+                settings,
+                shape,
+                plusT,
+                sites,
+                deformations,
+                apexSharpenings,
+                springScales,
+                texelOwners,
+                magnetPosition,
+                magneticFieldStrength,
+                config);
+            Vector3 bottom = EvaluateDisplacedPosition(
+                settings,
+                shape,
+                minusB,
+                sites,
+                deformations,
+                apexSharpenings,
+                springScales,
+                texelOwners,
+                magnetPosition,
+                magneticFieldStrength,
+                config);
+            Vector3 top = EvaluateDisplacedPosition(
+                settings,
+                shape,
+                plusB,
+                sites,
+                deformations,
+                apexSharpenings,
+                springScales,
+                texelOwners,
+                magnetPosition,
+                magneticFieldStrength,
+                config);
+            return Vector3.Cross(right - left, top - bottom).normalized;
         }
 
         // Match SurfaceHeightUv by folding samples across octahedral edges rather than clamping them.
@@ -518,6 +601,9 @@ namespace ChromaGLS.Settings
             return uv;
         }
 
+        private static float QuinticEase(float unit)
+            => unit * unit * unit * ((unit * ((6f * unit) - 15f)) + 10f);
+
         private static float BulgeEnvelope(float normalizedDistance, float exponent)
         {
             float distanceSquared = normalizedDistance * normalizedDistance;
@@ -526,9 +612,10 @@ namespace ChromaGLS.Settings
 
         private static int CornerIndex(int texelX, int texelY, int mapSize)
         {
-            int clampedX = Mathf.Clamp(texelX, 0, mapSize - 1);
-            int clampedY = Mathf.Clamp(texelY, 0, mapSize - 1);
-            return (clampedY * mapSize) + clampedX;
+            Vector2 folded = FoldChartUv(new Vector2((texelX + 0.5f) / mapSize, (texelY + 0.5f) / mapSize));
+            int x = Mathf.FloorToInt(folded.x * mapSize);
+            int y = Mathf.FloorToInt(folded.y * mapSize);
+            return (y * mapSize) + x;
         }
 
         // Use the same clamps as ApplyConfiguration and ApplyWorldScaleParameters so the CPU copy matches the shader.

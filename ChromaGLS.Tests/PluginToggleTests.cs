@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
@@ -65,6 +66,11 @@ internal sealed class PluginToggleTests
                 remainingAfterDisable.Select(GetMethodIdentity),
                 Is.EquivalentTo(expectedPersistent.Select(GetMethodIdentity)),
                 "Disabling must remove only the effect patches; the load-time data-annotation patch set must remain installed.");
+            MethodInfo neonSetOn = typeof(FlickeringNeonSign).GetMethod("SetOn", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Assert.That(
+                remainingAfterDisable.Select(GetMethodIdentity),
+                Does.Contain(GetMethodIdentity(neonSetOn)),
+                "The neon flicker sync must stay patched while GLS is disabled so independently-enabled ferrofluid reflections keep tracking the sign.");
 
             setEnabled.Invoke(null, [true]);
             MethodBase[] reappliedMethods = GetOwnedPatchedMethods();
@@ -118,14 +124,57 @@ internal sealed class PluginToggleTests
     private static Type[] RequiredPersistentPatchTypes(Assembly pluginAssembly)
     {
         Type converterPatches = pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsConverterPatches", throwOnError: true)!;
-        return new[]
+        var required = new List<Type>
         {
             pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsDeserializePatch", throwOnError: true)!,
             converterPatches,
             converterPatches.GetNestedType("LightColorEventBoxConverterPatch", BindingFlags.NonPublic)!,
             pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsEasingRuntimePatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsNodeEasingDeserializePatch+RotationPatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsNodeEasingDeserializePatch+TranslationPatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsSplineTweenTranslationPatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsSplineTweenRotationPatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsSplineTranslationEventPatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsSplineRotationEventPatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsColorDistancePreparePatch", throwOnError: true)!,
             pluginAssembly.GetType("ChromaGLS.Settings.ChromaGlsRequirementSelectionPatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.FerrofluidNeonSignPatch", throwOnError: true)!,
         };
+        // 1.29.1 has no fxEventsCollection, so its nested reader patch is compile-excluded there.
+        Type? fxPatch = pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsNodeEasingDeserializePatch+FloatFxPatch", throwOnError: false);
+        if (fxPatch != null)
+        {
+            required.Add(fxPatch);
+        }
+
+        // The FloatFx spline tween/handler patches are guarded the same way on legacy.
+        Type? fxTweenPatch = pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsSplineTweenFloatFxPatch", throwOnError: false);
+        if (fxTweenPatch != null)
+        {
+            required.Add(fxTweenPatch);
+            required.Add(pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsSplineFloatFxEventPatch", throwOnError: true)!);
+        }
+
+        bool tweaks = (bool)pluginAssembly
+            .GetType("ChromaGLS.Settings.ChromaGLSSettingsUI", throwOnError: true)!
+            .GetField("FerrofluidTweakMenuEnabled", BindingFlags.Static | BindingFlags.NonPublic)!
+            .GetRawConstantValue()!;
+        Type? fpfcPatch = pluginAssembly.GetType("ChromaGLS.HarmonyPatches.FerrofluidFpfcTogglePatch", throwOnError: false);
+        Assert.That(fpfcPatch != null, Is.EqualTo(tweaks), "The FPFC toggle patch must exist exactly in FERROFLUID_TWEAKS builds.");
+        if (fpfcPatch != null)
+            required.Add(fpfcPatch);
+
+        Type? keyCodePatch = pluginAssembly.GetType("ChromaGLS.HarmonyPatches.FerrofluidKeyboardKeyCodePatch", throwOnError: false);
+        Assert.That(keyCodePatch != null, Is.EqualTo(tweaks), "The KeyCode input patch must exist exactly in FERROFLUID_TWEAKS builds.");
+        if (keyCodePatch != null)
+            required.Add(keyCodePatch);
+
+        Type? keyNamePatch = pluginAssembly.GetType("ChromaGLS.HarmonyPatches.FerrofluidKeyboardKeyNamePatch", throwOnError: false);
+        Assert.That(keyNamePatch != null, Is.EqualTo(tweaks), "The key-name input patch must exist exactly in FERROFLUID_TWEAKS builds.");
+        if (keyNamePatch != null)
+            required.Add(keyNamePatch);
+
+        return required.ToArray();
     }
 
     // Resolve each required type's real target under a scratch Harmony owner so the assertion compares

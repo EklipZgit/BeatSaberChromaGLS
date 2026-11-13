@@ -84,4 +84,9 @@ float2 FerrofluidPrimitiveSurfaceUv(float3 world, float2 yawCosSin)
     return (p * 0.5) + 0.5;
 }
 
+float4 LoadFerrofluidTexel(sampler2D textureSampler, int index)
+{
+    return tex2Dlod(textureSampler, float4(FerrofluidParticleUv(index), 0.0, 0.0));
+}
+
 #endif

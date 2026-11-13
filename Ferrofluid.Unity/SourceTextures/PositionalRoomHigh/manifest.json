@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "tier": "High",
+  "captureSource": "C:\\Users\\tdrak\\BSManager\\BSInstances\\1.44.1\\UserData\\NativeMenuReflectionCapture\\2026-11-08_022234",
+  "capturePosition": [
+    0.0,
+    1.7,
+    -0.6096
+  ],
+  "roomFaceSize": 2048,
+  "horizonWidth": 2048,
+  "horizonHeight": 512,
+  "horizonCenterRadiusFloor": [
+    0.0,
+    0.0,
+    8.0,
+    0.0
+  ],
+  "horizonHeightRange": [
+    -4.01565552,
+    16.031311
+  ],
+  "logoPlane": [
+    0.0,
+    0.0,
+    1.0,
+    -26.1
+  ],
+  "horizonUv": "u=atan2(hit.x,hit.z)/(2*pi)+0.5; v=(hit.y-minY)/height; half-texel Y padding; U repeat, V clamp",
+  "referenceComposition": "max(approved - filtered corrected horizon, 0) + filtered corrected horizon",
+  "sourceHashes": {
+    "on-0-positiveX.exr": "62a2027e7acb9527c176577adc22e9d89f27ed632bb816dcd25c22b7795dc77f",
+    "off-0-positiveX.exr": "62a2027e7acb9527c176577adc22e9d89f27ed632bb816dcd25c22b7795dc77f",
+    "on-1-negativeX.exr": "635d9951d84ce1747282496f12a21058fe71afd13bb878b929ea2004715cd5db",
+    "off-1-negativeX.exr": "635d9951d84ce1747282496f12a21058fe71afd13bb878b929ea2004715cd5db",
+    "on-2-positiveY.exr": "f5923edcd224206a2046f7d4c7d74c847839ca3ca1ffb86f412e34cc91eb5631",
+    "off-2-positiveY.exr": "f5923edcd224206a2046f7d4c7d74c847839ca3ca1ffb86f412e34cc91eb5631",
+    "on-3-negativeY.exr": "f5923edcd224206a2046f7d4c7d74c847839ca3ca1ffb86f412e34cc91eb5631",
+    "off-3-negativeY.exr": "f5923edcd224206a2046f7d4c7d74c847839ca3ca1ffb86f412e34cc91eb5631",
+    "on-4-positiveZ.exr": "c0e607ecabcaf7b5104bd7536164cac8b17e212f8fe713b1ddc3efbd23e381be",
+    "off-4-positiveZ.exr": "39b65344ef1adc73726bd9775b68a0fb08f43b4d60d949751aeeb3f0a76f3037",
+    "on-5-negativeZ.exr": "60d5fc4f8ddfcce84671c35b69b39865a92d31e8ad54b2a67bd19954c514bf95",
+    "off-5-negativeZ.exr": "60d5fc4f8ddfcce84671c35b69b39865a92d31e8ad54b2a67bd19954c514bf95"
+  },
+  "worstPreEncodingRecompositionError": 0.0,
+  "negativeResidualChannelCount": 0
+}

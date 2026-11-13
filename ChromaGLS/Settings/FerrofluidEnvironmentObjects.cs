@@ -1,6 +1,14 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using Zenject;
+#if PRE_V1_42_1
+using FerroMaterial = UnityEngine.PhysicMaterial;
+using FerroMaterialCombine = UnityEngine.PhysicMaterialCombine;
+#else
+using FerroMaterial = UnityEngine.PhysicsMaterial;
+using FerroMaterialCombine = UnityEngine.PhysicsMaterialCombine;
+#endif
 
 namespace ChromaGLS.Settings
 {
@@ -9,6 +17,79 @@ namespace ChromaGLS.Settings
         Torus = 0,
         RoundedCube = 1,
         Sphere = 2,
+    }
+
+    // Binds the shared enclosure contact material to the ground-level PileOfNotes box colliders
+    // so note impacts use the same restitution/friction pair as the enclosure. Original materials
+    // (including null) are restored on teardown and only while the collider still uses ours.
+    internal sealed class FerrofluidMenuNoteContacts
+    {
+        private readonly FerroMaterial _material;
+        private readonly BoxCollider?[] _colliders;
+        private readonly FerroMaterial?[] _originals;
+
+        internal FerrofluidMenuNoteContacts(Transform environment, FerroMaterial material)
+        {
+            _material = material;
+            Transform? pile = environment.Find("PileOfNotes");
+            BoxCollider[] found = pile != null
+                ? pile.GetComponentsInChildren<BoxCollider>(true)
+                : System.Array.Empty<BoxCollider>();
+            int count = 0;
+            foreach (BoxCollider collider in found)
+            {
+                if (collider != null && !collider.isTrigger)
+                    count++;
+            }
+
+            _colliders = new BoxCollider?[count];
+            _originals = new FerroMaterial?[count];
+            int index = 0;
+            foreach (BoxCollider collider in found)
+            {
+                if (collider == null || collider.isTrigger)
+                    continue;
+                _colliders[index] = collider;
+                _originals[index] = collider.sharedMaterial;
+                index++;
+            }
+        }
+
+        internal static FerrofluidMenuNoteContacts? Create(Scene scene, FerroMaterial material)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+                return null;
+
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                foreach (Transform candidate in root.GetComponentsInChildren<Transform>(true))
+                {
+                    if (candidate.name != "DefaultMenuEnvironment")
+                        continue;
+                    return new FerrofluidMenuNoteContacts(candidate, material);
+                }
+            }
+
+            return null;
+        }
+
+        internal void Apply()
+        {
+            for (int i = 0; i < _colliders.Length; i++)
+            {
+                if (_colliders[i] != null)
+                    _colliders[i]!.sharedMaterial = _material;
+            }
+        }
+
+        internal void Restore()
+        {
+            for (int i = 0; i < _colliders.Length; i++)
+            {
+                if (_colliders[i] != null && _colliders[i]!.sharedMaterial == _material)
+                    _colliders[i]!.sharedMaterial = _originals[i];
+            }
+        }
     }
 
     // The menu cube and sphere have separate toggles from the SongCore info-button ring.
@@ -21,7 +102,22 @@ namespace ChromaGLS.Settings
         private static FerrofluidEnvironmentManager? _manager;
         private static bool _cubeEnabled;
         private static bool _sphereEnabled;
+        private static bool _fluidCubeEnabled;
+        private static bool _fluidSphereEnabled;
         private static bool _menuActive;
+
+        // The floor carries the shared 0.15 Minimum half of every pair; cube faces layer an
+        // owned Multiply material on top for their own tuned grip while bounce stays shared.
+        internal static FerroMaterial CreateContactMaterial(bool floor)
+            => new(floor ? "ChromaGLS Ferrofluid Floor Contact" : "ChromaGLS Ferrofluid Enclosure")
+            {
+                bounciness = FerrofluidGrabPhysics.FloorRestitution,
+                dynamicFriction = floor ? FerrofluidGrabPhysics.FloorFriction : 0.6f,
+                staticFriction = floor ? FerrofluidGrabPhysics.FloorFriction : 0.6f,
+                bounceCombine = FerroMaterialCombine.Average,
+                frictionCombine = floor ? FerroMaterialCombine.Minimum : FerroMaterialCombine.Average,
+                hideFlags = HideFlags.DontSave,
+            };
 
         internal static void BeginMenuSession()
         {
@@ -46,9 +142,33 @@ namespace ChromaGLS.Settings
             Reconcile();
         }
 
+        internal static void RunSpinTest(bool sphere, float rotationsPerSecond)
+        {
+            if (_manager != null)
+                _manager.RunSpinTest(sphere, rotationsPerSecond);
+        }
+
+        internal static void StopSpinTests()
+        {
+            if (_manager != null)
+                _manager.StopSpinTests();
+        }
+
         internal static void SetSphereEnabled(bool enabled)
         {
             _sphereEnabled = enabled;
+            Reconcile();
+        }
+
+        internal static void SetFluidCubeEnabled(bool enabled)
+        {
+            _fluidCubeEnabled = enabled;
+            Reconcile();
+        }
+
+        internal static void SetFluidSphereEnabled(bool enabled)
+        {
+            _fluidSphereEnabled = enabled;
             Reconcile();
         }
 
@@ -77,6 +197,16 @@ namespace ChromaGLS.Settings
             localCenter = new Vector3(1f, localScale.y * 0.5f, 1f);
         }
 
+        // The extra pair parks behind the originals at z=0 inside the same enclosure.
+        internal static void EvaluateFluidPlacement(
+            FerrofluidSurfaceShape shape,
+            out Vector3 localCenter,
+            out Vector3 localScale)
+        {
+            EvaluatePlacement(shape, out localCenter, out localScale);
+            localCenter.z = 0f;
+        }
+
         internal static void ApplyFloorPlacement(
             Transform primitiveTransform,
             Transform menuPlayerAnchor,
@@ -100,7 +230,9 @@ namespace ChromaGLS.Settings
         {
             if (shape == FerrofluidSurfaceShape.RoundedCube)
             {
-                return Mathf.Clamp(config.FerrofluidCubeChartYaw, 0f, 90f);
+                // Preserve the approved fixed chart orientation; changing re-encoding
+                // is not needed to remove the tweak.
+                return 45f;
             }
 
             return shape == FerrofluidSurfaceShape.Sphere
@@ -497,7 +629,7 @@ namespace ChromaGLS.Settings
             if (!_menuActive)
                 return;
 
-            if ((_cubeEnabled || _sphereEnabled) && _config != null && _manager == null)
+            if ((_cubeEnabled || _sphereEnabled || _fluidCubeEnabled || _fluidSphereEnabled) && _config != null && _manager == null)
             {
                 Transform? playerAnchor = FerrofluidMagnetController.ResolvePlayerAnchor();
                 if (playerAnchor == null)
@@ -513,32 +645,64 @@ namespace ChromaGLS.Settings
 
             if (_manager != null)
             {
-                _manager.Reconcile(_cubeEnabled, _sphereEnabled, _config);
+                _manager.Reconcile(_cubeEnabled, _sphereEnabled, _fluidCubeEnabled, _fluidSphereEnabled, _config);
             }
         }
 
+        // Grab arbitration must run after VRPointer's LateUpdate hand selection, or a binary trigger
+        // pull would be consumed before the pointer reports its newly selected hand.
+        [DefaultExecutionOrder(1000)]
         private sealed class FerrofluidEnvironmentManager : MonoBehaviour
         {
             private Transform _playerAnchor = null!;
             private FerrofluidPrimitiveEffect? _cube;
             private FerrofluidPrimitiveEffect? _sphere;
+            private FerrofluidPrimitiveEffect? _fluidCube;
+            private FerrofluidPrimitiveEffect? _fluidSphere;
             private bool _cubeCreationFailed;
             private bool _sphereCreationFailed;
+            private bool _fluidCubeCreationFailed;
+            private bool _fluidSphereCreationFailed;
+            private bool _enclosureResolved;
+            private bool _enclosureFailedLogged;
+            private FerrofluidGrabEnclosure _enclosure;
+            private FerroMaterial? _enclosureMaterial;
+            private Vector3 _shadowLightDirection = new Vector3(0f, 1f, 1f).normalized;
+            private FerroMaterial? _floorMaterial;
+            private Collider? _floorCollider;
+            private Transform? _headTransform;
+            private FerrofluidCameraCollision? _cameraCollision;
+            private FerrofluidMagnetController? _grabInput;
+            private FerrofluidGrabOwnership? _grabOwnership;
+            private FerrofluidMenuNoteContacts? _menuNoteContacts;
+            private readonly FerrofluidTriggerTracker _triggerTracker = new();
 
-            internal void Initialize(Transform playerAnchor) => _playerAnchor = playerAnchor;
+            internal void Initialize(Transform playerAnchor)
+            {
+                _playerAnchor = playerAnchor;
+                MenuPlayerController? menuPlayerController = playerAnchor.GetComponent<MenuPlayerController>();
+                _headTransform = menuPlayerController != null ? menuPlayerController._headTransform : null;
+                TryResolveEnclosure();
+            }
 
             internal void Reconcile(
                 bool cubeEnabled,
                 bool sphereEnabled,
+                bool fluidCubeEnabled,
+                bool fluidSphereEnabled,
                 Config? config)
             {
                 // Retry failed GPU creation only after a toggle or a new menu session.
-                if (config == null || (!cubeEnabled && !sphereEnabled))
+                if (config == null || (!cubeEnabled && !sphereEnabled && !fluidCubeEnabled && !fluidSphereEnabled))
                 {
                     DestroyPrimitive(ref _cube);
                     DestroyPrimitive(ref _sphere);
+                    DestroyPrimitive(ref _fluidCube);
+                    DestroyPrimitive(ref _fluidSphere);
                     _cubeCreationFailed = false;
                     _sphereCreationFailed = false;
+                    _fluidCubeCreationFailed = false;
+                    _fluidSphereCreationFailed = false;
                     return;
                 }
 
@@ -547,34 +711,18 @@ namespace ChromaGLS.Settings
                     return;
                 }
 
-                if (cubeEnabled && _cube == null && !_cubeCreationFailed)
-                {
-                    _cube = FerrofluidPrimitiveEffect.Create(
-                        _playerAnchor,
-                        FerrofluidSurfaceShape.RoundedCube,
-                        config);
-                    _cubeCreationFailed = _cube == null;
-                }
+                ReconcilePrimitive(ref _cube, ref _cubeCreationFailed, cubeEnabled, FerrofluidSurfaceShape.RoundedCube, fluid: false, config);
+                ReconcilePrimitive(ref _sphere, ref _sphereCreationFailed, sphereEnabled, FerrofluidSurfaceShape.Sphere, fluid: false, config);
+                ReconcilePrimitive(ref _fluidCube, ref _fluidCubeCreationFailed, fluidCubeEnabled, FerrofluidSurfaceShape.RoundedCube, fluid: true, config);
+                ReconcilePrimitive(ref _fluidSphere, ref _fluidSphereCreationFailed, fluidSphereEnabled, FerrofluidSurfaceShape.Sphere, fluid: true, config);
 
-                if (sphereEnabled && _sphere == null && !_sphereCreationFailed)
+                // A later Reconcile can resolve the enclosure; attach grabbables deferred until then.
+                if (_enclosureResolved)
                 {
-                    _sphere = FerrofluidPrimitiveEffect.Create(
-                        _playerAnchor,
-                        FerrofluidSurfaceShape.Sphere,
-                        config);
-                    _sphereCreationFailed = _sphere == null;
-                }
-
-                if (!cubeEnabled)
-                {
-                    DestroyPrimitive(ref _cube);
-                    _cubeCreationFailed = false;
-                }
-
-                if (!sphereEnabled)
-                {
-                    DestroyPrimitive(ref _sphere);
-                    _sphereCreationFailed = false;
+                    AttachDeferred(_cube, isSphere: false, config);
+                    AttachDeferred(_sphere, isSphere: true, config);
+                    AttachDeferred(_fluidCube, isSphere: false, config);
+                    AttachDeferred(_fluidSphere, isSphere: true, config);
                 }
             }
 
@@ -582,6 +730,318 @@ namespace ChromaGLS.Settings
             {
                 _cube?.ApplyConfiguration(config);
                 _sphere?.ApplyConfiguration(config);
+                _fluidCube?.ApplyConfiguration(config);
+                _fluidSphere?.ApplyConfiguration(config);
+            }
+
+            private void LateUpdate()
+            {
+                UpdateGrabInteraction();
+            }
+
+            private void UpdateGrabInteraction()
+            {
+                if (!_enclosureResolved || _grabInput == null || _grabOwnership == null)
+                    return;
+
+                FerrofluidGrabbable? hovered = null;
+                VRController? controller = null;
+                float trigger = 0f;
+                Vector3 grabPoint = Vector3.zero;
+                if (_grabInput.TryGetPointerState(out VRController selected, out float triggerValue, out RaycastResult hovering))
+                {
+                    controller = selected;
+                    trigger = triggerValue;
+                    hovered = ResolveHovered(hovering.gameObject);
+                    grabPoint = hovering.worldPosition;
+                }
+
+                _grabInput.SuppressGrabCursor(hovered != null);
+
+                // Each hand's crossing is judged on its own previous sample, so a binary pull is
+                // never lost when the pointer switches hands on the same frame.
+                _grabInput.TryGetHandTriggers(out float leftTrigger, out float rightTrigger);
+                _triggerTracker.Update(
+                    leftTrigger,
+                    rightTrigger,
+                    out bool leftCrossing,
+                    out bool rightCrossing);
+                if (EvaluateGrabDecision(
+                        _grabOwnership,
+                        controller,
+                        controller != null && ReferenceEquals(controller, _grabInput.LeftController),
+                        leftCrossing,
+                        rightCrossing,
+                        hovered))
+                    hovered!.Acquire(FerrofluidMagnetController.GetAttachTransform(controller!), grabPoint);
+
+                ApplyMagnetHeightAmplification(_cube != null ? _cube.Grabbable : null, hovered, controller, trigger);
+                ApplyMagnetHeightAmplification(_sphere != null ? _sphere.Grabbable : null, hovered, controller, trigger);
+                ApplyMagnetHeightAmplification(_fluidCube != null ? _fluidCube.Grabbable : null, hovered, controller, trigger);
+                ApplyMagnetHeightAmplification(_fluidSphere != null ? _fluidSphere.Grabbable : null, hovered, controller, trigger);
+                ReleaseDroppedGrip(_cube != null ? _cube.Grabbable : null);
+                ReleaseDroppedGrip(_sphere != null ? _sphere.Grabbable : null);
+                ReleaseDroppedGrip(_fluidCube != null ? _fluidCube.Grabbable : null);
+                ReleaseDroppedGrip(_fluidSphere != null ? _fluidSphere.Grabbable : null);
+                Vector3 playerRight = _grabInput.EvaluatePlayerRight();
+                ApplyControllerInput(_cube != null ? _cube.Grabbable : null, hovered, controller, playerRight);
+                ApplyControllerInput(_sphere != null ? _sphere.Grabbable : null, hovered, controller, playerRight);
+                ApplyControllerInput(_fluidCube != null ? _fluidCube.Grabbable : null, hovered, controller, playerRight);
+                ApplyControllerInput(_fluidSphere != null ? _fluidSphere.Grabbable : null, hovered, controller, playerRight);
+                if (_cube != null && _cube.Grabbable != null)
+                    _cube.Grabbable.SampleGrabTarget(Time.unscaledDeltaTime, Time.unscaledTime);
+
+                if (_sphere != null && _sphere.Grabbable != null)
+                    _sphere.Grabbable.SampleGrabTarget(Time.unscaledDeltaTime, Time.unscaledTime);
+                if (_fluidCube != null && _fluidCube.Grabbable != null)
+                    _fluidCube.Grabbable.SampleGrabTarget(Time.unscaledDeltaTime, Time.unscaledTime);
+                if (_fluidSphere != null && _fluidSphere.Grabbable != null)
+                    _fluidSphere.Grabbable.SampleGrabTarget(Time.unscaledDeltaTime, Time.unscaledTime);
+            }
+
+            // The acquisition decision a grab frame makes once the pointer's currently selected hand
+            // is known; separated so native validation can drive the real arbitration path.
+            internal static bool EvaluateGrabDecision(
+                FerrofluidGrabOwnership ownership,
+                object? selectedHand,
+                bool selectedIsLeft,
+                bool leftCrossing,
+                bool rightCrossing,
+                FerrofluidGrabbable? hovered)
+                => selectedHand != null
+                    && (selectedIsLeft ? leftCrossing : rightCrossing)
+                    && hovered != null
+                    && !hovered.IsHeld
+                    && ownership.TryAcquire(selectedHand, hovered);
+
+            private void ApplyMagnetHeightAmplification(
+                FerrofluidGrabbable? grabbable,
+                FerrofluidGrabbable? hovered,
+                VRController? controller,
+                float trigger)
+            {
+                if (grabbable == null)
+                    return;
+
+                if (_grabOwnership!.OwnerOf(grabbable) is VRController holder)
+                {
+                    grabbable.SetMagnetHeightAmplification(FerrofluidGrabPhysics.EvaluateMagnetHeightAmplification(holder.triggerValue));
+                    return;
+                }
+
+                grabbable.SetMagnetHeightAmplification(
+                    ReferenceEquals(grabbable, hovered) && controller != null
+                        ? FerrofluidGrabPhysics.EvaluateMagnetHeightAmplification(trigger)
+                        : 1f);
+            }
+
+            private void ApplyControllerInput(
+                FerrofluidGrabbable? grabbable,
+                FerrofluidGrabbable? hovered,
+                VRController? selected,
+                Vector3 playerRight)
+            {
+                if (grabbable == null)
+                    return;
+
+                Vector2 forceStick = Vector2.zero;
+                Vector2 spinStick = Vector2.zero;
+                Quaternion pointerRotation = Quaternion.identity;
+                FerrofluidGrabPhysics.RouteControllerInput(
+                    _grabOwnership!.OwnerOf(grabbable),
+                    selected,
+                    ReferenceEquals(grabbable, hovered),
+                    _grabInput!.LeftController,
+                    _grabInput.RightController,
+                    out object? dominantHand,
+                    out object? nonDominantHand);
+                if (dominantHand is VRController dominant)
+                {
+                    forceStick = _grabInput.SampleForceInput(dominant);
+                    pointerRotation = FerrofluidMagnetController.GetAttachTransform(dominant).rotation;
+                }
+
+                if (nonDominantHand is VRController nonDominant)
+                    spinStick = _grabInput.SampleSpinInput(nonDominant);
+
+                grabbable.SetControllerInput(forceStick, spinStick, pointerRotation, playerRight);
+                grabbable.SetGrabDepthInput(
+                    dominantHand is VRController holder && grabbable.IsHeld
+                        ? _grabInput.SampleGrabDepthInput(holder)
+                        : 0);
+            }
+
+            private void ReleaseDroppedGrip(FerrofluidGrabbable? grabbable)
+            {
+                if (grabbable == null)
+                    return;
+
+                if (_grabOwnership!.OwnerOf(grabbable) is not VRController holder)
+                    return;
+
+                if (!holder.active || FerrofluidGrabPhysics.ShouldReleaseGrab(holder.triggerValue))
+                {
+                    _grabOwnership.ReleaseTarget(grabbable);
+                    grabbable.Release();
+                }
+            }
+
+            internal void RunSpinTest(bool sphere, float rotationsPerSecond)
+            {
+                FerrofluidPrimitiveEffect? effect = sphere ? _sphere : _cube;
+                if (effect == null || effect.Grabbable == null)
+                    return;
+
+                effect.Grabbable.StartSpinTest(rotationsPerSecond);
+            }
+
+            internal void StopSpinTests()
+            {
+                if (_cube != null && _cube.Grabbable != null)
+                    _cube.Grabbable.StopSpinTest();
+                if (_sphere != null && _sphere.Grabbable != null)
+                    _sphere.Grabbable.StopSpinTest();
+                if (_fluidCube != null && _fluidCube.Grabbable != null)
+                    _fluidCube.Grabbable.StopSpinTest();
+                if (_fluidSphere != null && _fluidSphere.Grabbable != null)
+                    _fluidSphere.Grabbable.StopSpinTest();
+            }
+
+            private FerrofluidGrabbable? ResolveHovered(GameObject? hovering)
+            {
+                if (hovering == null)
+                    return null;
+
+                if (HoverMatches(hovering, _cube))
+                    return _cube!.Grabbable;
+                if (HoverMatches(hovering, _sphere))
+                    return _sphere!.Grabbable;
+                if (HoverMatches(hovering, _fluidCube))
+                    return _fluidCube!.Grabbable;
+
+                return HoverMatches(hovering, _fluidSphere) ? _fluidSphere!.Grabbable : null;
+            }
+
+            private static bool HoverMatches(GameObject hovering, FerrofluidPrimitiveEffect? effect)
+            {
+                return effect != null
+                    && (ReferenceEquals(hovering, effect.gameObject) || hovering.transform.IsChildOf(effect.transform));
+            }
+
+            private FerrofluidGrabbable? AttachGrabbable(
+                FerrofluidPrimitiveEffect effect,
+                bool sphere,
+                Config config)
+            {
+                if (!TryResolveEnclosure() || _enclosureMaterial == null)
+                    return null;
+
+                effect.InitializeFloorShadow(_enclosure.FloorY, _shadowLightDirection);
+                FerrofluidGrabbable grabbable = effect.gameObject.AddComponent<FerrofluidGrabbable>();
+                grabbable.Initialize(
+                    _enclosure,
+                    sphere,
+                    _enclosureMaterial,
+                    _grabOwnership);
+                if (_floorCollider != null)
+                    grabbable.ConfigureFloorContact(_floorCollider);
+                if (!sphere)
+                    grabbable.ConfigureCubeRoundness(FerrofluidEnvironmentObjects.EvaluateRoundness(FerrofluidSurfaceShape.RoundedCube, config));
+
+                grabbable.ConfigureContactPhysics(config);
+
+                return grabbable;
+            }
+
+            private bool TryResolveEnclosure()
+            {
+                if (_enclosureResolved)
+                {
+                    return true;
+                }
+
+                if (!FerrofluidGrabPhysics.TryResolveEnclosure(_playerAnchor, out _enclosure))
+                {
+                    if (!_enclosureFailedLogged)
+                    {
+                        _enclosureFailedLogged = true;
+                        Plugin.Log.Error("[ChromaGLS Ferrofluid Environment] no active curved menu canvas contains the player and both primitives; grab physics disabled until the next reconcile.");
+                    }
+
+                    return false;
+                }
+
+                _enclosureResolved = true;
+                foreach (FlickeringNeonSign sign in Resources.FindObjectsOfTypeAll<FlickeringNeonSign>())
+                {
+                    if (!sign.gameObject.activeInHierarchy || !sign.gameObject.scene.IsValid())
+                        continue;
+
+                    Vector3 toLight = sign._light.transform.position - new Vector3(0f, _enclosure.FloorY, 1f);
+                    if (toLight.normalized.y > 0.1f)
+                        _shadowLightDirection = toLight.normalized;
+                    break;
+                }
+
+                _enclosureMaterial = CreateContactMaterial(floor: false);
+                _floorMaterial = CreateContactMaterial(floor: true);
+                _grabInput = FerrofluidMagnetController.CreateForGrab();
+                _grabOwnership = new FerrofluidGrabOwnership();
+                CreateEnclosureFloor();
+                CreateCameraCollision();
+                InitializeMenuNoteContacts();
+                Plugin.Log.Info($"[ChromaGLS Ferrofluid Environment] grab enclosure center={_enclosure.Center} radius={_enclosure.Radius} rear={_enclosure.RearPoint}.");
+                return true;
+            }
+
+            // The note piles live under the menu environment root, not the player rig, so the
+            // scan happens once when the enclosure material exists and is never retried per frame.
+            private void InitializeMenuNoteContacts()
+            {
+                if (_enclosureMaterial == null)
+                    return;
+
+                _menuNoteContacts = FerrofluidMenuNoteContacts.Create(
+                    SceneManager.GetSceneByName("MainMenu"),
+                    _enclosureMaterial);
+                _menuNoteContacts?.Apply();
+            }
+
+            private void CreateEnclosureFloor()
+            {
+                GameObject floor = new("ChromaGLS Ferrofluid Floor")
+                {
+                    layer = FerrofluidGrabPhysics.EnclosureLayer,
+                };
+                floor.transform.SetParent(transform, false);
+                floor.transform.position = new Vector3(
+                    _enclosure.Center.x - (_enclosure.RearNormal.x * _enclosure.RearExtension * 0.5f),
+                    _enclosure.FloorY - 0.5f,
+                    _enclosure.Center.z - (_enclosure.RearNormal.z * _enclosure.RearExtension * 0.5f));
+                BoxCollider floorCollider = floor.AddComponent<BoxCollider>();
+                floorCollider.size = new Vector3(
+                    ((_enclosure.Radius + 1f) * 2f) + (Mathf.Abs(_enclosure.RearNormal.x) * _enclosure.RearExtension),
+                    1f,
+                    ((_enclosure.Radius + 1f) * 2f) + (Mathf.Abs(_enclosure.RearNormal.z) * _enclosure.RearExtension));
+                floorCollider.sharedMaterial = _floorMaterial;
+                _floorCollider = floorCollider;
+            }
+
+            private void CreateCameraCollision()
+            {
+                if (_headTransform == null || _enclosureMaterial == null)
+                {
+                    return;
+                }
+
+                GameObject cameraObject = new("ChromaGLS Ferrofluid Camera")
+                {
+                    layer = FerrofluidGrabPhysics.EnclosureLayer,
+                };
+                cameraObject.transform.SetParent(transform, true);
+                FerrofluidCameraCollision collision = cameraObject.AddComponent<FerrofluidCameraCollision>();
+                collision.Initialize(_headTransform, SphereScale.y * 0.5f * 0.85f, _enclosureMaterial);
+                _cameraCollision = collision;
             }
 
             private void DestroyPrimitive(ref FerrofluidPrimitiveEffect? effect)
@@ -596,19 +1056,82 @@ namespace ChromaGLS.Settings
                 effect = null;
             }
 
-            private void OnEnable() => Reconcile(_cubeEnabled, _sphereEnabled, _config);
+            private void AttachDeferred(FerrofluidPrimitiveEffect? effect, bool isSphere, Config config)
+            {
+                if (effect != null && effect.Grabbable == null)
+                    effect.Grabbable = AttachGrabbable(effect, isSphere, config);
+            }
+
+            private void ReconcilePrimitive(
+                ref FerrofluidPrimitiveEffect? effect,
+                ref bool creationFailed,
+                bool enabled,
+                FerrofluidSurfaceShape shape,
+                bool fluid,
+                Config config)
+            {
+                if (enabled && effect == null && !creationFailed)
+                {
+                    effect = fluid
+                        ? FerrofluidPrimitiveEffect.CreateFluid(_playerAnchor, shape, config)
+                        : FerrofluidPrimitiveEffect.Create(_playerAnchor, shape, config);
+                    creationFailed = effect == null;
+                    if (effect != null)
+                        effect.Grabbable = AttachGrabbable(effect, shape == FerrofluidSurfaceShape.Sphere, config);
+                }
+
+                if (!enabled)
+                {
+                    DestroyPrimitive(ref effect);
+                    creationFailed = false;
+                }
+            }
+
+            private void OnEnable()
+            {
+                Reconcile(_cubeEnabled, _sphereEnabled, _fluidCubeEnabled, _fluidSphereEnabled, _config);
+                _menuNoteContacts?.Apply();
+                if (_cameraCollision != null)
+                {
+                    _cameraCollision.SnapToHead();
+                    _cameraCollision.gameObject.SetActive(true);
+                }
+            }
 
             // The primitives are scene roots, so hiding the menu rig must also stop their simulations.
             private void OnDisable()
             {
+                _menuNoteContacts?.Restore();
                 DestroyPrimitive(ref _cube);
                 DestroyPrimitive(ref _sphere);
+                DestroyPrimitive(ref _fluidCube);
+                DestroyPrimitive(ref _fluidSphere);
+                if (_cameraCollision != null)
+                {
+                    _cameraCollision.gameObject.SetActive(false);
+                }
             }
 
             private void OnDestroy()
             {
+                _menuNoteContacts?.Restore();
+                _menuNoteContacts = null;
                 DestroyPrimitive(ref _cube);
                 DestroyPrimitive(ref _sphere);
+                DestroyPrimitive(ref _fluidCube);
+                DestroyPrimitive(ref _fluidSphere);
+                if (_enclosureMaterial != null)
+                {
+                    Destroy(_enclosureMaterial);
+                    _enclosureMaterial = null;
+                }
+
+                if (_floorMaterial != null)
+                {
+                    Destroy(_floorMaterial);
+                    _floorMaterial = null;
+                }
+
                 if (ReferenceEquals(_manager, this))
                 {
                     _manager = null;
@@ -624,16 +1147,16 @@ namespace ChromaGLS.Settings
         public void Dispose() => FerrofluidEnvironmentObjects.EndMenuSession();
     }
 
-    internal sealed class FerrofluidPrimitiveEffect : MonoBehaviour
+    [DefaultExecutionOrder(1100)]
+    internal sealed partial class FerrofluidPrimitiveEffect : MonoBehaviour
     {
         private FerrofluidSurfaceShape _shape;
         private FerrofluidGpuSimulation? _simulation;
+        private FerrofluidFloorShadow? _floorShadow;
         private FerrofluidMagnetController _magnetController = null!;
         private Vector3 _magneticFieldPosition;
         private Vector3 _magnetTarget;
-        private Vector3 _magnetVelocity;
         private Vector3 _handPosition;
-        private Vector3 _handVelocity;
         private float _handStrength;
         private float _sourceWorldScale;
         private float _roundness;
@@ -644,14 +1167,35 @@ namespace ChromaGLS.Settings
         private bool _hasPointer;
         private bool _hasHand;
 
+        internal FerrofluidGrabbable? Grabbable { get; set; }
+
         internal static FerrofluidPrimitiveEffect? Create(
             Transform playerAnchor,
             FerrofluidSurfaceShape shape,
             Config config)
+            => CreatePrimitive(playerAnchor, shape, config, fluid: false);
+
+        internal static FerrofluidPrimitiveEffect? CreateFluid(
+            Transform playerAnchor,
+            FerrofluidSurfaceShape shape,
+            Config config)
+            => CreatePrimitive(playerAnchor, shape, config, fluid: true);
+
+        private static FerrofluidPrimitiveEffect? CreatePrimitive(
+            Transform playerAnchor,
+            FerrofluidSurfaceShape shape,
+            Config config,
+            bool fluid)
         {
-            GameObject primitiveObject = new($"ChromaGLS Ferrofluid {shape}", typeof(MeshFilter), typeof(MeshRenderer));
+            GameObject primitiveObject = new($"ChromaGLS {(fluid ? "Fluid" : "Ferrofluid")} {shape}", typeof(MeshFilter), typeof(MeshRenderer));
             Transform primitiveTransform = primitiveObject.transform;
             FerrofluidEnvironmentObjects.ApplyFloorPlacement(primitiveTransform, playerAnchor, shape);
+            if (fluid)
+            {
+                FerrofluidEnvironmentObjects.EvaluateFluidPlacement(shape, out Vector3 fluidCenter, out _);
+                primitiveTransform.position = fluidCenter;
+            }
+
             FerrofluidPrimitiveEffect effect = primitiveObject.AddComponent<FerrofluidPrimitiveEffect>();
             effect._shape = shape;
             effect._roundness = FerrofluidEnvironmentObjects.EvaluateRoundness(shape, config);
@@ -673,10 +1217,25 @@ namespace ChromaGLS.Settings
                 return null;
             }
 
+            if (fluid)
+                effect._simulation.DisableSpikes(config);
+
             effect._lastUpdateAt = Time.unscaledTime;
             primitiveObject.AddComponent<FerrofluidPrimitiveRaycaster>().Initialize(effect);
             Plugin.Log.Info($"[ChromaGLS Ferrofluid Environment] attached shape={shape} worldPosition={primitiveTransform.position} scale={primitiveTransform.localScale} rig={playerAnchor.name} scene={primitiveObject.scene.name} parent={(primitiveTransform.parent == null ? "<root>" : primitiveTransform.parent.name)} root={primitiveTransform.root.name}.");
             return effect;
+        }
+
+        internal void InitializeFloorShadow(float floorY, Vector3 surfaceToLight)
+        {
+            if (_floorShadow != null
+                || !FerrofluidGpuResources.TryGet(out FerrofluidGpuResources? resources)
+                || resources!.FloorShadowShader == null)
+            {
+                return;
+            }
+
+            _floorShadow = new FerrofluidFloorShadow(transform, _shape, floorY, surfaceToLight, resources.FloorShadowShader, _simulation);
         }
 
         internal void ApplyConfiguration(Config config)
@@ -686,6 +1245,11 @@ namespace ChromaGLS.Settings
             _chartYawDegrees = FerrofluidEnvironmentObjects.EvaluateChartYawDegrees(_shape, config);
             _magnetSurfaceGap = FerrofluidEnvironmentObjects.EvaluatePrimitiveSurfaceGap(config);
             _simulation?.ApplyConfiguration(config);
+            if (Grabbable != null)
+            {
+                Grabbable.ConfigureCubeRoundness(_roundness);
+                Grabbable.ConfigureContactPhysics(config);
+            }
         }
 
         internal bool TryRaycast(Vector3 origin, Vector3 direction, out Vector3 position, out Vector3 normal)
@@ -699,34 +1263,65 @@ namespace ChromaGLS.Settings
         }
 
         // Smooth world positions before converting to UVs so crossing a chart seam cannot jump the magnet.
-        private void Update()
+        private void LateUpdate()
         {
             float now = Time.unscaledTime;
             float deltaTime = Mathf.Clamp(now - _lastUpdateAt, 0f, 0.1f);
             _lastUpdateAt = now;
-            bool hasRay = _magnetController.TryGetActiveControllerRay(
-                out Vector3 rayOrigin,
-                out Vector3 rayDirection);
-            if (hasRay)
+            float width = transform.lossyScale.x;
+
+            // Menu transitions can replace the player rig, so use its current transform for the field scale.
+            _sourceWorldScale = FerrofluidEnvironmentObjects.EvaluateSourceWorldScale(transform);
+
+            // Contacts can block the wanted cursor, so keep the field on the captured surface patch.
+            bool held = Grabbable != null && Grabbable.IsHeld;
+            bool hasRay;
+            float targetStrength;
+            Vector3 magnetPosition;
+            Vector3 surfacePosition;
+            if (held)
             {
-                Vector3 localOrigin = transform.InverseTransformPoint(rayOrigin);
-                Vector3 localDirection = transform.InverseTransformDirection(rayDirection).normalized;
-                Vector3 localTarget = FerrofluidInteraction.EvaluateRayTarget(_shape, localOrigin, localDirection, _roundness, out _);
-                hasRay = Vector3.Dot(localTarget - localOrigin, localDirection) > 0f;
+                Vector3 localGrabAnchor = Grabbable!.LocalGrabAnchor;
+                surfacePosition = transform.TransformPoint(localGrabAnchor);
+                Vector3 normalLocal = FerrofluidEnvironmentObjects.EvaluateSurfaceNormalFromDirection(_shape, localGrabAnchor, _roundness);
+                Vector3 normalWorld = transform.TransformDirection(normalLocal).normalized;
+                magnetPosition = FerrofluidGpuSimulation.EvaluateMagnetSurfacePosition(
+                    surfacePosition,
+                    surfacePosition,
+                    normalWorld,
+                    _sourceWorldScale,
+                    _magnetSurfaceGap);
+                _magneticFieldPosition = surfacePosition;
+                hasRay = true;
+                targetStrength = 1f;
+            }
+            else
+            {
+                hasRay = _magnetController.TryGetActiveControllerRay(
+                    out Vector3 rayOrigin,
+                    out Vector3 rayDirection);
                 if (hasRay)
                 {
-                    _magnetTarget = transform.TransformPoint(localTarget);
-                    if (!_hasPointer)
+                    Vector3 localOrigin = transform.InverseTransformPoint(rayOrigin);
+                    Vector3 localDirection = transform.InverseTransformDirection(rayDirection).normalized;
+                    Vector3 localTarget = FerrofluidInteraction.EvaluateRayTarget(_shape, localOrigin, localDirection, _roundness, out _);
+                    hasRay = Vector3.Dot(localTarget - localOrigin, localDirection) > 0f;
+                    if (hasRay)
                     {
-                        _magneticFieldPosition = _magnetTarget;
-                    }
+                        _magnetTarget = transform.TransformPoint(localTarget);
+                        if (!_hasPointer)
+                        {
+                            _magneticFieldPosition = _magnetTarget;
+                        }
 
-                    _hasPointer = true;
+                        _hasPointer = true;
+                    }
                 }
+
+                _magneticFieldPosition = FerrofluidInteraction.TrackPosition(_magneticFieldPosition, _magnetTarget, width, deltaTime);
+                MapPointer(_magneticFieldPosition, out surfacePosition, out targetStrength, out magnetPosition);
             }
 
-            _magneticFieldPosition = FerrofluidInteraction.SmoothPosition(_magneticFieldPosition, _magnetTarget, ref _magnetVelocity, deltaTime);
-            MapPointer(_magneticFieldPosition, out Vector3 surfacePosition, out float targetStrength, out Vector3 magnetPosition);
             float strengthBlend = 1f - Mathf.Exp(-deltaTime / 0.1f);
             _magneticFieldStrength = Mathf.Lerp(_magneticFieldStrength, hasRay ? targetStrength : 0f, strengthBlend);
 
@@ -739,26 +1334,35 @@ namespace ChromaGLS.Settings
                 }
 
                 _hasHand = true;
-                _handPosition = FerrofluidInteraction.SmoothPosition(_handPosition, handTarget, ref _handVelocity, deltaTime);
+                _handPosition = FerrofluidInteraction.TrackPosition(_handPosition, handTarget, width, deltaTime);
             }
 
             _handStrength = Mathf.Lerp(_handStrength, hasHand ? 1f : 0f, strengthBlend);
 
-            // Menu transitions can replace the player rig, so use its current transform for the field scale.
-            _sourceWorldScale = FerrofluidEnvironmentObjects.EvaluateSourceWorldScale(transform);
             _simulation!.UpdatePrimitiveFrame(
                 _sourceWorldScale,
                 magnetPosition,
                 surfacePosition,
                 _magneticFieldStrength,
                 _handPosition,
-                _handStrength);
+                _handStrength,
+                Grabbable != null ? Grabbable.BodyVelocity : Vector3.zero,
+                Grabbable != null ? Grabbable.BodyAngularVelocity : Vector3.zero,
+                Grabbable != null ? Grabbable.MagnetHeightAmplification : 1f);
+
+            _floorShadow?.Update();
         }
+
+        private void OnEnable() => _floorShadow?.SetVisible(true);
+
+        private void OnDisable() => _floorShadow?.SetVisible(false);
 
         private void OnDestroy()
         {
             _simulation?.Dispose();
             _simulation = null;
+            _floorShadow?.Dispose();
+            _floorShadow = null;
         }
 
         // A missed ray still attracts the nearest visible surface, with strength reduced by the physical gap.

@@ -1,0 +1,51 @@
+<bg>
+  <modal id="parabola-light-modal" show-event="show-parabola" hide-event="hide-parabola" click-off-closes="false" move-to-center="true" size-delta-x="110" size-delta-y="72">
+    <vertical pad="2" spacing="1" horizontal-fit="Unconstrained" vertical-fit="Unconstrained" child-control-width="true" child-expand-width="true" child-control-height="true" child-expand-height="false">
+      <text text="Menu light" align="Center" font-size="5" preferred-height="8"/>
+      <horizontal spacing="4" preferred-height="8" min-height="8">
+        <button text="Cancel" on-click="parabola-cancel"/>
+        <button text="Reset" on-click="parabola-reset"/>
+        <button text="Save" on-click="parabola-save"/>
+      </horizontal>
+      <scroll-view min-height="50" preferred-height="50" flexible-height="0">
+        <vertical spacing="1.5" preferred-width="96" horizontal-fit="PreferredSize" vertical-fit="PreferredSize" child-control-height="true" child-expand-height="false">
+          <dropdown-list-setting text="Type" value="light-type" options="light-types" apply-on-change="true" get-event="refresh-parabola" preferred-height="7" min-height="7"/>
+          <bool-setting text="Enabled" value="light-enabled" apply-on-change="true" get-event="refresh-parabola" preferred-height="7" min-height="7"/>
+          <slider-setting text="Left/right" value="parabola-offset-x" min="-10" max="10" increment="0.05" apply-on-change="true" get-event="refresh-parabola" formatter="FormatOffset" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Forward/back" value="parabola-offset-z" min="-10" max="10" increment="0.05" apply-on-change="true" get-event="refresh-parabola" formatter="FormatOffset" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <vertical id="free-pose-controls" spacing="1.5" child-control-height="true" child-expand-height="false">
+          <slider-setting text="Up/down" value="light-height" min="-2" max="10" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatDepth" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Pitch" value="light-rotation-x" min="-180" max="180" increment="1" apply-on-change="true" get-event="refresh-parabola" formatter="FormatRotation" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Roll" value="light-rotation-z" min="-180" max="180" increment="1" apply-on-change="true" get-event="refresh-parabola" formatter="FormatRotation" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          </vertical>
+          <slider-setting text="Yaw" value="parabola-rotation" min="-180" max="180" increment="1" apply-on-change="true" get-event="refresh-parabola" formatter="FormatRotation" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Underside depth" value="light-depth" hover-hint="Extends the shape below its local origin; use Up/down to move the whole light." min="0.001" max="2" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatDepth" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Brightness" value="parabola-brightness" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatIntensity" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="R" value="parabola-red" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatIntensity" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="G" value="parabola-green" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatIntensity" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="B" value="parabola-blue" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatIntensity" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <vertical id="parabola-controls" spacing="1.5" child-control-height="true" child-expand-height="false">
+            <slider-setting text="Parabola scale" value="parabola-width" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatWidth" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+            <slider-setting text="End length (0 = automatic)" value="light-end-length" min="0" max="20" increment="0.05" apply-on-change="true" get-event="refresh-parabola" formatter="FormatEndLength" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+            <slider-setting text="Fade start" value="light-fade-start" min="0" max="0.95" increment="0.01" apply-on-change="true" get-event="refresh-parabola" formatter="FormatOffset" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          </vertical>
+          <vertical id="size-controls" spacing="1.5" child-control-height="true" child-expand-height="false">
+            <slider-setting text="Side length / diameter" value="light-size" min="0.1" max="10" increment="0.1" apply-on-change="true" get-event="refresh-parabola" formatter="FormatOffset" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          </vertical>
+          <vertical id="material-width-controls" spacing="1.5" child-control-height="true" child-expand-height="false">
+            <slider-setting text="Light width" value="parabola-light-width" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatLightWidth" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+            <text text="Frame width is capped to keep a hollow center." font-size="3" preferred-height="5" word-wrapping="true"/>
+          </vertical>
+          <vertical id="floor-glow-controls" spacing="1.5" child-control-height="true" child-expand-height="false">
+          <slider-setting text="Floor bloom width" value="parabola-bloom-width" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatBloomWidth" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Floor bloom brightness" value="parabola-bloom-brightness" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatIntensity" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Inner bloom threshold" value="parabola-hdr-glow-threshold" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatIntensity" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Inner bloom width" value="parabola-hdr-glow-width" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatHdrGlowWidth" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          <slider-setting text="Inner bloom brightness" value="parabola-hdr-glow-brightness" min="0" max="1" increment="0.001" apply-on-change="true" get-event="refresh-parabola" formatter="FormatIntensity" preferred-height="7" min-height="7" word-wrapping="false" enable-auto-sizing="true" font-size="3.5" font-size-min="2.5" font-size-max="3.5" overflow-mode="Ellipsis"/>
+          </vertical>
+
+        </vertical>
+      </scroll-view>
+    </vertical>
+  </modal>
+</bg>

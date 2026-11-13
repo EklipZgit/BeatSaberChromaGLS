@@ -12,7 +12,13 @@ namespace ChromaGLS.Settings
             // Bind and eagerly construct the UI so its GameplaySetup tab is registered as soon as the menu container is installed.
             Container.BindInterfacesTo<ChromaGLSSettingsUI>().AsSingle().NonLazy();
             Container.BindInterfacesTo<FerrofluidMenuLifecycle>().AsSingle().NonLazy();
+            Container.BindInterfacesTo<FerrofluidReflectionLifecycle>().AsSingle().NonLazy();
+            Container.BindInterfacesAndSelfTo<ParabolicFloorLight>().AsSingle().NonLazy();
             Container.BindInterfacesTo<UpdateMenuButton>().AsSingle().NonLazy();
+            Container.BindInterfacesAndSelfTo<FerrofluidReflectionDownloadUI>().AsSingle().NonLazy();
+#if FERROFLUID_TWEAKS
+            Container.BindInterfacesTo<FerrofluidSnapshotLifecycle>().AsSingle().NonLazy();
+#endif
         }
     }
 }

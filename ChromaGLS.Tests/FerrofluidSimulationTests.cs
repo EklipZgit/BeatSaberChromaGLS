@@ -61,7 +61,10 @@ internal sealed class FerrofluidSimulationTests
         Assert.That(cutoff, Is.Not.Null, "A bounded base cutoff must collapse only the residual membrane between spike cells.");
         Assert.That((float)cutoff!.Invoke(null, [-1f])!, Is.EqualTo(0f));
         Assert.That((float)cutoff.Invoke(null, [0.015f])!, Is.EqualTo(0.015f).Within(0.0001f));
-        Assert.That((float)cutoff.Invoke(null, [1f])!, Is.EqualTo(0.1f));
+        Assert.That((float)cutoff.Invoke(null, [0.15f])!, Is.EqualTo(0.15f));
+        Assert.That((float)cutoff.Invoke(null, [0.3f])!, Is.EqualTo(0.3f));
+        Assert.That((float)cutoff.Invoke(null, [0.4f])!, Is.EqualTo(0.3f));
+        Assert.That((float)cutoff.Invoke(null, [1f])!, Is.EqualTo(0.3f));
     }
 
     // MagnetPlaneFollowsRenderedCurvedRectangle rejects an uncurved source plane while preserving the flat-preview normal, including mirrored viewer-facing depth.
@@ -381,20 +384,30 @@ internal sealed class FerrofluidSimulationTests
         Assert.That(GetConstant<int>(simulationType, "CoarseCandidateMapSize"), Is.EqualTo(16));
     }
 
-    // FerrofluidSimulationRunsAtOneHundredTwentyHertz proves each checkpoint advances half of the tuned 16 ms duration and no rendered frame can accumulate more than the former total response.
     [Test]
-    public void SimulationCadenceRunsAtOneHundredTwentyHertzWithoutSpeedingUp()
+    public void SimulationCadenceTracksRealTimeWithoutIncreasingTheGpuTickBudget()
     {
         Type simulationType = GetPluginType("ChromaGLS.Settings.FerrofluidGpuSimulation");
-        float interval = GetConstant<float>(simulationType, "SimulationInterval");
-        float deltaTimeMilliseconds = GetConstant<float>(simulationType, "SimulationDeltaTimeMilliseconds");
-        int maximumTicksPerFrame = GetConstant<int>(simulationType, "MaximumSimulationTicksPerFrame");
+        Type timingType = GetPluginType("ChromaGLS.Settings.FerrofluidSimulationTiming");
+        MethodInfo calculate = timingType.GetMethod("CalculateStepSchedule", BindingFlags.Static | BindingFlags.NonPublic)!;
+        (int Ticks, float Seconds, float Remainder) schedule(float elapsed, bool primitive = true)
+            => ((int, float, float))calculate.Invoke(null, new object[] { 0f, elapsed, 2, primitive })!;
 
-        Assert.That(interval, Is.EqualTo(1f / 120f).Within(0.000001f));
-        Assert.That(deltaTimeMilliseconds, Is.EqualTo(8f).Within(0.000001f));
-        Assert.That(Mathf.FloorToInt((1f / 60f) / interval), Is.EqualTo(2));
-        Assert.That(maximumTicksPerFrame, Is.EqualTo(2));
-        Assert.That(deltaTimeMilliseconds * maximumTicksPerFrame, Is.EqualTo(16f).Within(0.000001f));
+        var nominal = schedule(1f / 120f);
+        Assert.That(nominal.Ticks, Is.EqualTo(1));
+        Assert.That(nominal.Seconds, Is.EqualTo(1f / 120f));
+        var sixty = schedule(1f / 60f);
+        Assert.That(sixty.Ticks, Is.EqualTo(2));
+        Assert.That(sixty.Seconds, Is.EqualTo(1f / 120f));
+        var thirty = schedule(1f / 30f);
+        Assert.That(thirty.Ticks, Is.EqualTo(2));
+        Assert.That(thirty.Ticks * thirty.Seconds, Is.EqualTo(1f / 30f).Within(0.000001f));
+        Assert.That(thirty.Seconds / 2f, Is.LessThanOrEqualTo((1f / 120f) + 0.000001f));
+
+        var torus = schedule(1f / 30f, primitive: false);
+        Assert.That(torus.Ticks, Is.EqualTo(2));
+        Assert.That(torus.Seconds, Is.EqualTo(1f / 120f));
+        Assert.That(GetConstant<float>(simulationType, "SimulationDeltaTimeMilliseconds"), Is.EqualTo(8f));
     }
 
     // SpikeDisplacementBlendKeepsCellBordersContinuous proves the reported corrosion: every quantity that multiplies spike height must stay continuous across Voronoi texel borders while a magnet sweeps the surface, or the displaced surface cracks open between cells. The CPU mirror evaluates the exact shader deformation at one-sided limits on each side of every border edge, so a point-fetched axis or sharpening factor fails by producing a position jump orders of magnitude above the blended residual.
@@ -481,7 +494,7 @@ internal sealed class FerrofluidSimulationTests
             Vector2[] springStates = new Vector2[siteCount];
             for (int index = 0; index < siteCount; index++)
             {
-                object[] restArguments = [settings, shape, sites[index], new Vector3(0f, 0f, 100f), 0f, 0f];
+                object[] restArguments = [settings, shape, sites[index], new Vector3(0f, 0f, 100f), 0f, 0f, 1f];
                 Vector4 restDeformation = (Vector4)evaluateSiteDeformation.Invoke(null, restArguments)!;
                 springStates[index] = new Vector2(restDeformation.w, 0f);
                 springScales[index] = restDeformation.w;
@@ -506,7 +519,7 @@ internal sealed class FerrofluidSimulationTests
                 Vector3 magnetSurface = magnetDirection * 0.5f;
                 for (int index = 0; index < siteCount; index++)
                 {
-                    object[] arguments = [settings, shape, sites[index], magnet, 1.2f, 0f];
+                    object[] arguments = [settings, shape, sites[index], magnet, 1.2f, 0f, 1f];
                     deformations[index] = (Vector4)evaluateSiteDeformation.Invoke(null, arguments)!;
                     sharpenings[index] = (float)arguments[5]!;
 
@@ -524,10 +537,10 @@ internal sealed class FerrofluidSimulationTests
 
                     Vector3 left = (Vector3)evaluateDisplaced.Invoke(
                         null,
-                        [settings, shape, boundary - offset, sites, deformations, sharpenings, springScales, texelOwners, magnet, 1.2f, config])!;
+                        [settings, shape, boundary - offset, sites, deformations, sharpenings, springScales, texelOwners, magnet, 1.2f, config, 1f])!;
                     Vector3 right = (Vector3)evaluateDisplaced.Invoke(
                         null,
-                        [settings, shape, boundary + offset, sites, deformations, sharpenings, springScales, texelOwners, magnet, 1.2f, config])!;
+                        [settings, shape, boundary + offset, sites, deformations, sharpenings, springScales, texelOwners, magnet, 1.2f, config, 1f])!;
                     float gap = Vector3.Distance(left, right);
                     if (gap > maximumGap)
                     {

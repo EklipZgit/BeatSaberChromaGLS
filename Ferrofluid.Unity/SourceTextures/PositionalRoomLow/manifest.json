@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "tier": "Low",
+  "captureSource": "2026-11-06_031054",
+  "capturePosition": [
+    0.0,
+    1.7,
+    -0.6096
+  ],
+  "roomFaceSize": 1024,
+  "horizonWidth": 1024,
+  "horizonHeight": 256,
+  "horizonCenterRadiusFloor": [
+    0.0,
+    0.0,
+    8.0,
+    0.0
+  ],
+  "horizonHeightRange": [
+    -4.03137255,
+    16.062746
+  ],
+  "logoPlane": [
+    0.0,
+    0.0,
+    1.0,
+    -26.1
+  ],
+  "horizonUv": "u=atan2(hit.x,hit.z)/(2*pi)+0.5; v=(hit.y-minY)/height; half-texel Y padding; U repeat, V clamp",
+  "referenceComposition": "max(approved - filtered corrected horizon, 0) + filtered corrected horizon",
+  "sourceHashes": {
+    "on-0-positiveX.exr": "8ce6a15ffad9392bb38bbdcd4fa17ec4eca06c3201b6026b2ee4f7e580dc7e9a",
+    "off-0-positiveX.exr": "8ce6a15ffad9392bb38bbdcd4fa17ec4eca06c3201b6026b2ee4f7e580dc7e9a",
+    "on-1-negativeX.exr": "0b0edd5296f416451c35fe7334afaa49c44a58c05bacfbe0fad352437dfd3ff7",
+    "off-1-negativeX.exr": "0b0edd5296f416451c35fe7334afaa49c44a58c05bacfbe0fad352437dfd3ff7",
+    "on-2-positiveY.exr": "5b72189b9f3ddf3f4cf45bd53c0403004031c9f5db6111d06bb509c124481858",
+    "off-2-positiveY.exr": "5b72189b9f3ddf3f4cf45bd53c0403004031c9f5db6111d06bb509c124481858",
+    "on-3-negativeY.exr": "5b72189b9f3ddf3f4cf45bd53c0403004031c9f5db6111d06bb509c124481858",
+    "off-3-negativeY.exr": "5b72189b9f3ddf3f4cf45bd53c0403004031c9f5db6111d06bb509c124481858",
+    "on-4-positiveZ.exr": "73b3855ec47add4b506796cd192b02703acd199c5869fd24581f98e3607c4de8",
+    "off-4-positiveZ.exr": "deabdb9a08d2998762c795851f984eee526966de78f65352d42769d76de53433",
+    "on-5-negativeZ.exr": "560afc18d774d42bb079ed9291ea9533bb74f3c689addf4c4679cad34afc6f3a",
+    "off-5-negativeZ.exr": "560afc18d774d42bb079ed9291ea9533bb74f3c689addf4c4679cad34afc6f3a"
+  },
+  "worstPreEncodingRecompositionError": 0.0,
+  "negativeResidualChannelCount": 0
+}

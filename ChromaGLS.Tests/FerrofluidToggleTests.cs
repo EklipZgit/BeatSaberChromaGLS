@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Xml.Linq;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -10,6 +12,18 @@ namespace ChromaGLS.Tests;
 [TestFixture]
 internal sealed class FerrofluidToggleTests
 {
+    // The moved modal inserts get-event between slider attributes, so range guarantees are
+    // asserted on the matched element rather than a contiguous markup fragment.
+    private static void AssertSlider(string bsml, string binding, string min, string max, string increment)
+    {
+        XElement slider = XDocument.Parse(bsml).Descendants("slider-setting")
+            .Single(element => (string?)element.Attribute("value") == binding);
+        Assert.That((string?)slider.Attribute("apply-on-change"), Is.EqualTo("true"), $"{binding} must apply live.");
+        Assert.That((string?)slider.Attribute("min"), Is.EqualTo(min), $"{binding} min must hold.");
+        Assert.That((string?)slider.Attribute("max"), Is.EqualTo(max), $"{binding} max must hold.");
+        Assert.That((string?)slider.Attribute("increment"), Is.EqualTo(increment), $"{binding} increment must hold.");
+    }
+
     [Test]
     public void CubeAndSpherePreferencesDoNotCreateObjectsOutsideTheMenu()
     {
@@ -90,9 +104,9 @@ internal sealed class FerrofluidToggleTests
         Assert.That(bsml, Does.Contain("value='ferrofluid-border-enabled'"), "The ChromaGLS tab must expose the independent ferrofluid-border toggle.");
     }
 
-    // FerrofluidTweakMenuHiddenBehindBuildFlag verifies the main-build settings surface embeds only the four public toggles; the full tweak view stays embedded for builds compiled with -p:FerrofluidTweaks=true.
+    // FerrofluidTweakMenuHiddenBehindBuildFlag verifies the main-build settings surface embeds only the seven public toggles; the full tweak view stays embedded for builds compiled with -p:FerrofluidTweaks=true.
     [Test]
-    public void MinimalSettingsSurfaceExposesOnlyTheFourPublicToggles()
+    public void MinimalSettingsSurfaceExposesOnlyTheSevenPublicToggles()
     {
         Assembly pluginAssembly = Assembly.Load("ChromaGLS");
         using Stream? bsmlStream = pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.modifiers-minimal.bsml");
@@ -103,6 +117,10 @@ internal sealed class FerrofluidToggleTests
         Assert.That(bsml, Does.Contain("value='ferrofluid-border-enabled'"));
         Assert.That(bsml, Does.Contain("value='ferrofluid-cube-enabled'"));
         Assert.That(bsml, Does.Contain("value='ferrofluid-sphere-enabled'"));
+        Assert.That(bsml, Does.Contain("value='fluid-cube-enabled'"), "The extra fluid cube toggle is public.");
+        Assert.That(bsml, Does.Contain("value='fluid-sphere-enabled'"), "The extra fluid sphere toggle is public.");
+        Assert.That(bsml, Does.Contain("value='parabola-light-enabled'"), "The parabola light toggle must be available in main builds.");
+        Assert.That(bsml, Does.Contain("on-click='parabola-open'"), "The parabola tweak button must be available in main builds.");
         Assert.That(bsml, Does.Contain("id='ferrofluid-preview-anchor'"), "The lifecycle anchor must stay bound in the minimal view.");
         Assert.That(bsml, Does.Not.Contain("slider-setting"), "Main builds must not expose the session-only tweak sliders.");
         Assert.That(bsml, Does.Not.Contain("ferrofluid-body-enabled"), "The tweak-only torus visibility control stays behind the build flag.");
@@ -144,10 +162,10 @@ internal sealed class FerrofluidToggleTests
         Assert.That(bsmlStream, Is.Not.Null);
         using StreamReader reader = new(bsmlStream!);
         string bsml = reader.ReadToEnd();
-        int firstTuningIndex = bsml.IndexOf("value='ferrofluid-spike-height-scale'", StringComparison.Ordinal);
+        int firstTuningIndex = bsml.IndexOf("id='ferro-tweak-button'", StringComparison.Ordinal);
         int cubeIndex = bsml.IndexOf("value='ferrofluid-cube-enabled'", StringComparison.Ordinal);
         int sphereIndex = bsml.IndexOf("value='ferrofluid-sphere-enabled'", StringComparison.Ordinal);
-        Assert.That(firstTuningIndex, Is.GreaterThanOrEqualTo(0));
+        Assert.That(firstTuningIndex, Is.GreaterThanOrEqualTo(0), "The TWEAK FERRO button must open the tuning modal.");
         Assert.That(cubeIndex, Is.GreaterThanOrEqualTo(0).And.LessThan(firstTuningIndex), "The cube switch must sit with the other persistent enable toggles above the tuning controls.");
         Assert.That(sphereIndex, Is.GreaterThan(cubeIndex).And.LessThan(firstTuningIndex), "The sphere switch must follow the cube switch inside the enable-toggle group.");
     }
@@ -798,17 +816,16 @@ internal sealed class FerrofluidToggleTests
             "Primitives need a gap-parameterized overload so the magnet forward-distance slider can pull the field toward the cube and sphere surfaces.");
 
         object session = Activator.CreateInstance(configType, nonPublic: true)!;
-        using StreamReader reader = new(pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml")!);
+        using StreamReader reader = new(pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.ferrofluid-settings.bsml")!);
         string bsml = reader.ReadToEnd();
         foreach ((string propertyName, string binding, float expectedDefault) in new[]
         {
-            ("FerrofluidPrimitiveSpikeSize", "ferrofluid-primitive-spike-size", 0.7f),
+            ("FerrofluidPrimitiveSpikeSize", "ferrofluid-primitive-spike-size", 0.35f),
             ("FerrofluidPrimitiveTipRoundness", "ferrofluid-primitive-tip-roundness", 0f),
             ("FerrofluidPrimitiveTipCapRounding", "ferrofluid-primitive-tip-cap-rounding", 0.81f),
-            ("FerrofluidSpikeMoundCurvature", "ferrofluid-spike-mound-curvature", 2f),
+            ("FerrofluidSpikeMoundCurvature", "ferrofluid-spike-mound-curvature", 1.4f),
             ("FerrofluidSpikeHeightRadius", "ferrofluid-spike-height-radius", 0.31f),
             ("FerrofluidSpikeTiltRadius", "ferrofluid-spike-tilt-radius", 0.73f),
-            ("FerrofluidPrimitiveAmbientScale", "ferrofluid-primitive-ambient-scale", 0.15f),
             ("FerrofluidPrimitiveFlattenRadius", "ferrofluid-primitive-flatten-radius", 1.45f),
             ("FerrofluidPrimitiveFlattenExponent", "ferrofluid-primitive-flatten-exponent", 2.7f),
             ("FerrofluidPrimitiveGlobalFlatten", "ferrofluid-primitive-global-flatten", 0.37f),
@@ -816,7 +833,6 @@ internal sealed class FerrofluidToggleTests
             ("FerrofluidCubeSpikeDensity", "ferrofluid-cube-spike-density", 1.2f),
             ("FerrofluidSphereSpikeDensity", "ferrofluid-sphere-spike-density", 0.95f),
             ("FerrofluidCubeRoundness", "ferrofluid-cube-roundness", 0.48f),
-            ("FerrofluidCubeChartYaw", "ferrofluid-cube-chart-yaw", 45f),
             ("FerrofluidSphereChartYaw", "ferrofluid-sphere-chart-yaw", 0f),
         })
         {
@@ -1003,7 +1019,7 @@ internal sealed class FerrofluidToggleTests
                 {
                     results[index] = (Vector4)siteMethod!.Invoke(
                         null,
-                        [settings, shape, sites[index], magnet, strength, 0f])!;
+                        [settings, shape, sites[index], magnet, strength, 0f, 1f])!;
                 }
 
                 return results;
@@ -1098,7 +1114,7 @@ internal sealed class FerrofluidToggleTests
                 {
                     positions[index] = (Vector3)displacedMethod!.Invoke(
                         null,
-                        [settings, shape, chartUvs[index], sites, deformations, sharpenings, springScales, texelOwners, magnet, strength, config])!;
+                        [settings, shape, chartUvs[index], sites, deformations, sharpenings, springScales, texelOwners, magnet, strength, config, 1f])!;
                 }
 
                 return positions;
@@ -1189,7 +1205,7 @@ internal sealed class FerrofluidToggleTests
                 Vector4[] results = new Vector4[sites.Length];
                 for (int index = 0; index < sites.Length; index++)
                 {
-                    results[index] = (Vector4)siteMethod!.Invoke(null, [settings, shape, sites[index], magnet, strength, 0f])!;
+                    results[index] = (Vector4)siteMethod!.Invoke(null, [settings, shape, sites[index], magnet, strength, 0f, 1f])!;
                 }
 
                 return results;
@@ -1202,7 +1218,7 @@ internal sealed class FerrofluidToggleTests
                 float[] results = new float[sites.Length];
                 for (int index = 0; index < sites.Length; index++)
                 {
-                    object[] arguments = [settings, shape, sites[index], magnet, strength, 0f];
+                    object[] arguments = [settings, shape, sites[index], magnet, strength, 0f, 1f];
                     siteMethod!.Invoke(null, arguments);
                     results[index] = (float)arguments[5]!;
                 }
@@ -1487,7 +1503,7 @@ internal sealed class FerrofluidToggleTests
         Assert.That(configType.GetProperty("FerrofluidSpikeSpringStrength")!.GetValue(snapshot), Is.EqualTo(321f).Within(0.0001f), "The spring strength slider must reach the torus even though the rest of its profile stays pinned.");
         Assert.That(configType.GetProperty("FerrofluidSpikeSpringDamping")!.GetValue(snapshot), Is.EqualTo(7.5f).Within(0.0001f), "The spring damping slider must reach the torus even though the rest of its profile stays pinned.");
 
-        using StreamReader reader = new(pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml")!);
+        using StreamReader reader = new(pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.ferrofluid-settings.bsml")!);
         string bsml = reader.ReadToEnd();
         Assert.That(bsml, Does.Contain("value='ferrofluid-spike-spring-strength' apply-on-change='true'"));
         Assert.That(bsml, Does.Contain("value='ferrofluid-spike-spring-damping' apply-on-change='true'"));
@@ -1506,7 +1522,11 @@ internal sealed class FerrofluidToggleTests
             if (property.Name == "Enabled"
                 || property.Name == "FerrofluidBorderEnabled"
                 || property.Name == "FerrofluidCubeEnabled"
-                || property.Name == "FerrofluidSphereEnabled")
+                || property.Name == "FerrofluidSphereEnabled"
+                || property.Name == "FluidCubeEnabled"
+                || property.Name == "FluidSphereEnabled"
+                || property.Name == "FerrofluidReflectionMapsDeclined"
+                || property.Name.StartsWith("ParabolicFloorLight"))
             {
                 Assert.That(property.IsDefined(ignoreType, true), Is.False, $"{property.Name} must remain a persisted feature preference.");
                 continue;
@@ -1530,21 +1550,20 @@ internal sealed class FerrofluidToggleTests
         Assembly plugin = Assembly.Load("ChromaGLS");
         Type configType = plugin.GetType("ChromaGLS.Settings.Config", true)!;
         object config = Activator.CreateInstance(configType, nonPublic: true)!;
-        using StreamReader reader = new(plugin.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml")!);
+        using StreamReader reader = new(plugin.GetManifestResourceStream("ChromaGLS.Settings.ferrofluid-settings.bsml")!);
         string bsml = reader.ReadToEnd();
-        foreach ((string propertyName, string binding, string range, float expectedDefault) in new[]
+        foreach ((string propertyName, string binding, string min, string max, string increment, float expectedDefault) in new[]
         {
-            // The latest 1.44.1 live settings dump re-captured these session defaults at base=3.0, tall=1.70, density=0.35, cutoff=0.10; the prior dump's values no longer match what the user last dialed in.
-            ("FerrofluidSpikeBaseSize", "ferrofluid-spike-base-size", "min='0.5' max='3'", 3f),
-            ("FerrofluidSpikeHeightScale", "ferrofluid-spike-height-scale", "min='0.25' max='4'", 0.9f),
-            ("FerrofluidSpikeDensity", "ferrofluid-spike-density", "min='0.25' max='1.5'", 0.35f),
-            ("FerrofluidSpikeBaseCutoff", "ferrofluid-spike-base-cutoff", "min='0' max='0.1' increment='0.001'", 0.1f),
+            ("FerrofluidSpikeBaseSize", "ferrofluid-spike-base-size", "0.5", "8", "0.05", 5.3f),
+            ("FerrofluidSpikeHeightScale", "ferrofluid-spike-height-scale", "0.25", "4", "0.05", 0.9f),
+            ("FerrofluidSpikeDensity", "ferrofluid-spike-density", "0.25", "1.5", "0.05", 0.35f),
+            ("FerrofluidSpikeBaseCutoff", "ferrofluid-spike-base-cutoff", "0", "0.3", "0.001", 0.15f),
         })
         {
             PropertyInfo? property = configType.GetProperty(propertyName);
             Assert.That(property, Is.Not.Null, $"Missing independent visibility knob {propertyName}.");
             Assert.That(property!.GetValue(config), Is.EqualTo(expectedDefault).Within(0.0001f), "The captured 1.37.1 tuning profile must be the session-start appearance.");
-            Assert.That(bsml, Does.Contain($"value='{binding}' apply-on-change='true' {range}"));
+            AssertSlider(bsml, binding, min, max, increment);
         }
     }
 
@@ -1555,13 +1574,13 @@ internal sealed class FerrofluidToggleTests
         Assembly plugin = Assembly.Load("ChromaGLS");
         Type configType = plugin.GetType("ChromaGLS.Settings.Config", true)!;
         object config = Activator.CreateInstance(configType, nonPublic: true)!;
-        using StreamReader reader = new(plugin.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml")!);
+        using StreamReader reader = new(plugin.GetManifestResourceStream("ChromaGLS.Settings.ferrofluid-settings.bsml")!);
         string bsml = reader.ReadToEnd();
 
         Assert.That(configType.GetProperty("FerrofluidLutScale")?.GetValue(config), Is.EqualTo(3f).Within(0.0001f));
         Assert.That(configType.GetProperty("FerrofluidLutOffset")?.GetValue(config), Is.EqualTo(0.07f).Within(0.0001f));
-        Assert.That(bsml, Does.Contain("value='ferrofluid-lut-scale' apply-on-change='true' min='0' max='4' increment='0.01'"));
-        Assert.That(bsml, Does.Contain("value='ferrofluid-lut-offset' apply-on-change='true' min='-1' max='1' increment='0.01'"));
+        AssertSlider(bsml, "ferrofluid-lut-scale", "0", "4", "0.01");
+        AssertSlider(bsml, "ferrofluid-lut-offset", "-1", "1", "0.01");
     }
 
     // MagneticHeightCapAndDeadZoneLeaveTiltRaw verifies the requested plateau affects height gain/loss and bulge without capping the distance-driven tilt angle path.
@@ -1571,16 +1590,15 @@ internal sealed class FerrofluidToggleTests
         Assembly plugin = Assembly.Load("ChromaGLS");
         Type configType = plugin.GetType("ChromaGLS.Settings.Config", true)!;
         object config = Activator.CreateInstance(configType, nonPublic: true)!;
-        using StreamReader reader = new(plugin.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml")!);
+        using StreamReader reader = new(plugin.GetManifestResourceStream("ChromaGLS.Settings.ferrofluid-settings.bsml")!);
         string bsml = reader.ReadToEnd();
-        // The latest 1.44.1 tuning pass pinned the height cap fully open at 1.00 and the dead zone at zero; the prior 0.86/0.04 capture no longer matches the authored defaults.
-        Assert.That(configType.GetProperty("MagnetHeightStrengthCap")?.GetValue(config), Is.EqualTo(0.74f).Within(0.0001f));
+        Assert.That(configType.GetProperty("MagnetHeightStrengthCap")?.GetValue(config), Is.EqualTo(0.66f).Within(0.0001f));
         Assert.That(configType.GetProperty("MagnetHeightDeadZoneRadius")?.GetValue(config), Is.EqualTo(0.13f).Within(0.0001f));
         // The 1.44.1 live dump re-captured the back-falloff exponent at 2.65; the old 2.0 expectation was the screenshot-era default.
         Assert.That(configType.GetProperty("BackHeightFalloffExponent")?.GetValue(config), Is.EqualTo(2.65f).Within(0.0001f));
-        Assert.That(bsml, Does.Contain("value='magnet-height-strength-cap' apply-on-change='true' min='0' max='1' increment='0.01'"));
-        Assert.That(bsml, Does.Contain("value='magnet-height-dead-zone-radius' apply-on-change='true' min='0' max='0.5' increment='0.005'"));
-        Assert.That(bsml, Does.Contain("value='back-height-falloff-exponent' apply-on-change='true' min='0.05' max='8' increment='0.05'"));
+        AssertSlider(bsml, "magnet-height-strength-cap", "0", "1", "0.01");
+        AssertSlider(bsml, "magnet-height-dead-zone-radius", "0", "0.5", "0.005");
+        AssertSlider(bsml, "back-height-falloff-exponent", "0.05", "8", "0.05");
         Type deformation = plugin.GetType("ChromaGLS.Settings.FerrofluidPrimitiveDeformation", true)!;
         Type shapeType = plugin.GetType("ChromaGLS.Settings.FerrofluidSurfaceShape", true)!;
         object sphere = Enum.ToObject(shapeType, 2);
@@ -1596,13 +1614,13 @@ internal sealed class FerrofluidToggleTests
         object uncappedSettings = settingsMethod.Invoke(null, [sphere, config, 1f])!;
         Vector4 site = new(0.5f, 0f, 0f, 0.04f);
         Vector3 magnet = new(0.7f, 0.2f, 0f);
-        Vector4 capped = (Vector4)siteMethod.Invoke(null, [cappedSettings, sphere, site, magnet, 1f, 0f])!;
-        Vector4 uncapped = (Vector4)siteMethod.Invoke(null, [uncappedSettings, sphere, site, magnet, 1f, 0f])!;
+        Vector4 capped = (Vector4)siteMethod.Invoke(null, [cappedSettings, sphere, site, magnet, 1f, 0f, 1f])!;
+        Vector4 uncapped = (Vector4)siteMethod.Invoke(null, [uncappedSettings, sphere, site, magnet, 1f, 0f, 1f])!;
         Assert.That(capped.w, Is.LessThan(uncapped.w));
         Assert.That(Vector3.Distance(new Vector3(capped.x, capped.y, capped.z), new Vector3(uncapped.x, uncapped.y, uncapped.z)), Is.LessThan(0.000001f), "The height cap cannot change tilt.");
         configType.GetProperty("MagnetHeightDeadZoneRadius")!.SetValue(config, 0.3f);
         object plateauSettings = settingsMethod.Invoke(null, [sphere, config, 1f])!;
-        Vector4 plateau = (Vector4)siteMethod.Invoke(null, [plateauSettings, sphere, site, magnet, 1f, 0f])!;
+        Vector4 plateau = (Vector4)siteMethod.Invoke(null, [plateauSettings, sphere, site, magnet, 1f, 0f, 1f])!;
         Assert.That(plateau.w, Is.GreaterThan(uncapped.w));
         Assert.That(Vector3.Distance(new Vector3(plateau.x, plateau.y, plateau.z), new Vector3(uncapped.x, uncapped.y, uncapped.z)), Is.LessThan(0.000001f), "The height plateau cannot change tilt.");
     }
@@ -1633,24 +1651,26 @@ internal sealed class FerrofluidToggleTests
     public void ExpandedSliderCapsReachTheSettingsMenu()
     {
         Assembly plugin = Assembly.Load("ChromaGLS");
-        using StreamReader reader = new(plugin.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml")!);
+        using StreamReader reader = new(plugin.GetManifestResourceStream("ChromaGLS.Settings.ferrofluid-settings.bsml")!);
         string bsml = reader.ReadToEnd();
 
-        Assert.That(bsml, Does.Contain("value='ferrofluid-exposure' apply-on-change='true' min='0' max='2' increment='0.01'"));
-        Assert.That(bsml, Does.Contain("value='magnet-elasticity' apply-on-change='true' min='4' max='160' increment='1'"));
-        Assert.That(bsml, Does.Contain("value='peak-width' apply-on-change='true' min='0.03' max='1' increment='0.01'"));
+        AssertSlider(bsml, "ferrofluid-exposure", "0", "2", "0.01");
+        AssertSlider(bsml, "magnet-elasticity", "4", "160", "1");
+        AssertSlider(bsml, "peak-width", "0.03", "1", "0.01");
+        AssertSlider(bsml, "ferrofluid-primitive-tip-roundness", "0", "1", "0.01");
+        AssertSlider(bsml, "ferrofluid-primitive-flatten-radius", "0.1", "2", "0.01");
 
-        // PrimitiveAmbientFlattenAndTipSlidersDriveVisibleResponse widened the primitive-only endpoints after the one-times ambient weight and narrow flatten radius were imperceptible under the user's darker exposure.
-        Assert.That(bsml, Does.Contain("value='ferrofluid-primitive-tip-roundness' apply-on-change='true' min='0' max='1' increment='0.01'"));
-        Assert.That(bsml, Does.Contain("value='ferrofluid-primitive-ambient-scale' apply-on-change='true' min='0' max='5' increment='0.01'"));
-        Assert.That(bsml, Does.Contain("value='ferrofluid-primitive-flatten-radius' apply-on-change='true' min='0.1' max='2' increment='0.01'"));
+        // The shared matte-to-oily dial was replaced by the linear HDR reflection weight;
+        // the reflectivity master stays exposed at the same range.
+        AssertSlider(bsml, "ferrofluid-reflectivity", "0", "1", "0.01");
 
-        // FerrofluidReflectivitySliderDialsMatteToOilyGloss exposes the shared matte-to-oily dial across the shader's crossfade range.
-        Assert.That(bsml, Does.Contain("value='ferrofluid-reflectivity' apply-on-change='true' min='0' max='1' increment='0.01'"));
-
-        // MatteSheenAndAnglesTuneWashSpecAndGlossSpread exposes both angular knobs as degrees of coverage measured inward from the silhouette so the full slider travel produces a visible sweep; exponents only reshaped an imperceptible band.
-        Assert.That(bsml, Does.Contain("value='ferrofluid-matte-angle' apply-on-change='true' min='0' max='90' increment='0.5'"));
-        Assert.That(bsml, Does.Contain("value='ferrofluid-reflection-angle' apply-on-change='true' min='0' max='90' increment='0.5'"));
+        // The removed matte/angle/rotation controls must not return; the new neutral-material
+        // sliders carry the eight approved session-only knobs instead.
+        Assert.That(bsml, Does.Not.Contain("value='ferrofluid-matte-"), "The removed matte controls must not be re-exposed.");
+        Assert.That(bsml, Does.Not.Contain("value='ferrofluid-reflection-angle'"), "The removed reflection angle must not be re-exposed.");
+        Assert.That(bsml, Does.Contain("value='ferrofluid-base-red'"));
+        Assert.That(bsml, Does.Contain("value='ferrofluid-room-reflection-strength'"));
+        Assert.That(bsml, Does.Contain("value='ferrofluid-thin-film-strength'"));
     }
 
     // FullWebGlTuningSurfaceIsExposedForSessionTuning retains every source control without persisting experimental adjustments across game restarts.
@@ -1700,15 +1720,15 @@ internal sealed class FerrofluidToggleTests
             "TiltReturnExponent",
             "InnerCornerFan",
             "FerrofluidReflectivity",
-            "FerrofluidMatteSheen",
-            "FerrofluidMatteAngle",
-            "FerrofluidReflectionAngle",
-            "FerrofluidMatteRotationX",
-            "FerrofluidMatteRotationY",
-            "FerrofluidMatteRotationZ",
-            "FerrofluidReflectionRotationX",
-            "FerrofluidReflectionRotationY",
-            "FerrofluidReflectionRotationZ",
+            "FerrofluidBaseRed",
+            "FerrofluidBaseGreen",
+            "FerrofluidBaseBlue",
+            "FerrofluidRoomReflectionStrength",
+            "FerrofluidFeetReflectionStrength",
+            "FerrofluidParabolaReflectionStrength",
+            "FerrofluidParabolaReflectionSaturation",
+            "FerrofluidThinFilmStrength",
+            "FerrofluidThinFilmAngleRate",
         ];
 
         foreach (string propertyName in settingProperties)
@@ -1716,7 +1736,7 @@ internal sealed class FerrofluidToggleTests
             Assert.That(configType.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public), Is.Not.Null, $"The session config must expose the source ferrofluid control {propertyName}.");
         }
 
-        using Stream? bsmlStream = pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml");
+        using Stream? bsmlStream = pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.ferrofluid-settings.bsml");
         Assert.That(bsmlStream, Is.Not.Null);
         using StreamReader reader = new(bsmlStream!);
         string bsml = reader.ReadToEnd();
@@ -1761,15 +1781,15 @@ internal sealed class FerrofluidToggleTests
             "tilt-return-exponent",
             "inner-corner-fan",
             "ferrofluid-reflectivity",
-            "ferrofluid-matte-sheen",
-            "ferrofluid-matte-angle",
-            "ferrofluid-reflection-angle",
-            "ferrofluid-matte-rotation-x",
-            "ferrofluid-matte-rotation-y",
-            "ferrofluid-matte-rotation-z",
-            "ferrofluid-reflection-rotation-x",
-            "ferrofluid-reflection-rotation-y",
-            "ferrofluid-reflection-rotation-z",
+            "ferrofluid-base-red",
+            "ferrofluid-base-green",
+            "ferrofluid-base-blue",
+            "ferrofluid-room-reflection-strength",
+            "ferrofluid-feet-reflection-strength",
+            "ferrofluid-parabola-reflection-strength",
+            "ferrofluid-parabola-reflection-saturation",
+            "ferrofluid-thin-film-strength",
+            "ferrofluid-thin-film-angle-rate",
         ];
         foreach (string valueBinding in valueBindings)
         {
@@ -1777,14 +1797,14 @@ internal sealed class FerrofluidToggleTests
         }
 
         Assert.That(bsml, Does.Contain("text='Show ferrofluid torus'"), "The visibility control must describe the complete GPU effect it gates.");
-        Assert.That(bsml, Does.Contain("value='ferrofluid-exposure' apply-on-change='true' min='0' max='2'"), "Beat Saber bloom compensation must remain adjustable beyond the captured full-strength endpoint without altering the source LUT.");
-        Assert.That(bsml, Does.Contain("value='magnet-forward-distance' apply-on-change='true' min='0' max='0.6'"), "The virtual-saber ray plane must expose its requested forward offset.");
-        Assert.That(bsml, Does.Contain("value='simulation-steps' apply-on-change='true' min='0' max='6' increment='1'"), "The Unity port must retain the source zero-through-six extra-step range.");
+        Assert.That(bsml, Does.Contain("value='ferrofluid-exposure'"), "Beat Saber bloom compensation must remain adjustable beyond the captured full-strength endpoint without altering the source LUT.");
+        AssertSlider(bsml, "magnet-forward-distance", "0", "0.6", "0.01");
+        AssertSlider(bsml, "simulation-steps", "0", "6", "1");
     }
 
-    // FreshConfigDefaultsMatchTheCapturedOneThreeSevenOneProfile preserves the user's confirmed live tuning without making BSIPA persistence the mechanism that restores it; the values now come from the latest 1.44.1 settings-menu session while the torus baseline pins the older captured values.
+    // Preserve the approved tuning while keeping room reflections aligned with world directions.
     [Test]
-    public void FreshConfigDefaultsMatchTheCapturedOneThreeSevenOneProfile()
+    public void FreshConfigDefaultsPreserveApprovedTuningAndWorldAlignedReflections()
     {
         Type configType = Assembly.Load("ChromaGLS").GetType("ChromaGLS.Settings.Config", throwOnError: true)!;
         object config = Activator.CreateInstance(configType, nonPublic: true)!;
@@ -1794,10 +1814,10 @@ internal sealed class FerrofluidToggleTests
             ("FerrofluidExposure", 1f),
             ("FerrofluidLutScale", 3f),
             ("FerrofluidLutOffset", 0.07f),
-            ("FerrofluidSpikeBaseSize", 3f),
+            ("FerrofluidSpikeBaseSize", 5.3f),
             ("FerrofluidSpikeHeightScale", 0.9f),
             ("FerrofluidSpikeDensity", 0.35f),
-            ("FerrofluidSpikeBaseCutoff", 0.1f),
+            ("FerrofluidSpikeBaseCutoff", 0.15f),
             ("ParticleMass", 1.86f),
             ("RestDensity", 2f),
             ("GasConstant", 37f),
@@ -1811,13 +1831,13 @@ internal sealed class FerrofluidToggleTests
             // The user pinned the magnet forward distance at 0.12 in the latest 1.44.1 tuning pass, replacing the earlier 0.09 capture.
             ("MagnetForwardDistance", 0.07f),
             ("BulgeRadius", 0.31f),
-            ("BulgeHeight", 0.12f),
-            ("HeightFalloffExponent", 2.4f),
-            ("PeakWidth", 0.03f),
-            ("HeightGain", 0.87f),
+            ("BulgeHeight", 0.156f),
+            ("HeightFalloffExponent", 3f),
+            ("PeakWidth", 0.5f),
+            ("HeightGain", 1.43f),
             ("BackHeightLoss", 1.19f),
             ("BackHeightFalloffExponent", 2.65f),
-            ("MagnetHeightStrengthCap", 0.74f),
+            ("MagnetHeightStrengthCap", 0.66f),
             ("MagnetHeightDeadZoneRadius", 0.13f),
             ("MaximumHeight", 1.6f),
             ("MaximumTiltDegrees", 50f),
@@ -1830,26 +1850,26 @@ internal sealed class FerrofluidToggleTests
             ("FerrofluidSpikeSpringDamping", 12f),
             ("FerrofluidPrimitiveTipRoundness", 0f),
             ("FerrofluidPrimitiveTipCapRounding", 0.81f),
-            ("FerrofluidSpikeMoundCurvature", 2f),
+            ("FerrofluidSpikeMoundCurvature", 1.4f),
             ("FerrofluidSpikeHeightRadius", 0.31f),
             ("FerrofluidSpikeTiltRadius", 0.73f),
-            // FerrofluidReflectivitySliderDialsMatteToOilyGloss and MatteSheenAndAnglesTuneWashSpecAndGlossSpread pin the user's chosen defaults: modest oil sheen, partial teal wash, and narrow degree-based rim/reflection bands.
+            // The matte/angle/rotation controls were removed; the approved defaults pin the
+            // retain-master reflectivity, the neutral milky-black base, and unit gains.
             ("FerrofluidReflectivity", 0.21f),
-            ("FerrofluidMatteSheen", 0.57f),
-            ("FerrofluidMatteAngle", 10f),
-            ("FerrofluidReflectionAngle", 15f),
-            // ReflectionRotationSlidersAimBothLobes locks in the user's tuned orientation for both lighting lobes.
-            ("FerrofluidMatteRotationX", 76f),
-            ("FerrofluidMatteRotationY", 295f),
-            ("FerrofluidMatteRotationZ", 174f),
-            ("FerrofluidReflectionRotationX", 244f),
-            ("FerrofluidReflectionRotationY", 210f),
-            ("FerrofluidReflectionRotationZ", 167f),
+            ("FerrofluidBaseRed", 0.01f),
+            ("FerrofluidBaseGreen", 0.01f),
+            ("FerrofluidBaseBlue", 0.01f),
+            ("FerrofluidRoomReflectionStrength", 1f),
+            ("FerrofluidFeetReflectionStrength", 1f),
+            ("FerrofluidParabolaReflectionStrength", 1f),
+            ("FerrofluidParabolaReflectionSaturation", 1f),
+            ("FerrofluidThinFilmStrength", 1f),
+            ("FerrofluidThinFilmAngleRate", 1f),
         ];
         foreach ((string name, float value) in expected)
         {
             float actual = (float)configType.GetProperty(name, BindingFlags.Instance | BindingFlags.Public)!.GetValue(config)!;
-            Assert.That(actual, Is.EqualTo(value).Within(0.0001f), $"Fresh {name} must match the captured 1.37.1 profile.");
+            Assert.That(actual, Is.EqualTo(value).Within(0.0001f), $"Fresh {name} must match the approved default.");
         }
 
         Assert.That(configType.GetProperty("FerrofluidBodyEnabled", BindingFlags.Instance | BindingFlags.Public)!.GetValue(config), Is.EqualTo(true), "The captured 1.37.1 profile keeps the complete torus visible.");
@@ -1873,7 +1893,8 @@ internal sealed class FerrofluidToggleTests
         Assembly pluginAssembly = Assembly.Load("ChromaGLS");
         Type effectType = pluginAssembly.GetType("ChromaGLS.Settings.ChromaGlsRequirementEffect", throwOnError: true)!;
         Type settingsType = pluginAssembly.GetType("ChromaGLS.Settings.ChromaGLSSettingsUI", throwOnError: true)!;
-        Type lifecycleType = pluginAssembly.GetType("ChromaGLS.Settings.FerrofluidPreviewAnchorLifecycle", throwOnError: true)!;
+        Type lifecycleType = pluginAssembly.GetType("ChromaGLS.Settings.FerrofluidSettingsAnchorLifecycle", throwOnError: true)!;
+        Type modalType = pluginAssembly.GetType("ChromaGLS.Settings.FerrofluidSettingsUI", throwOnError: true)!;
 
         // Regression: parsing the hidden tab created a second off-screen renderer that consumed time until the user cycled the feature toggle.
         using Stream? bsmlStream = pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml");
@@ -1882,8 +1903,9 @@ internal sealed class FerrofluidToggleTests
         string bsml = reader.ReadToEnd();
         Assert.That(bsml, Does.Contain("id='ferrofluid-preview-anchor' preferred-width='1' preferred-height='1'"), "The settings layout must retain only a non-stretching lifecycle anchor.");
         Assert.That(settingsType.GetMethod("HandlePostParse", BindingFlags.Instance | BindingFlags.NonPublic), Is.Not.Null, "The settings binding must install its activation relay after BSML parsing.");
-        Assert.That(lifecycleType.GetMethod("OnEnable", BindingFlags.Instance | BindingFlags.NonPublic), Is.Not.Null, "Opening the actual ChromaGLS tab must mark the tuning state without a toggle cycle.");
-        Assert.That(lifecycleType.GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic), Is.Not.Null, "Leaving the actual ChromaGLS tab must restore the SongCore metadata gate.");
+        Assert.That(modalType.GetMethod("Open", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public), Is.Not.Null, "Opening the actual modal must create the preview inside the shared visibility gate.");
+        Assert.That(modalType.GetMethod("CloseWithoutSaving", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public), Is.Not.Null, "Leaving the modal without saving must restore the SongCore metadata gate.");
+        Assert.That(lifecycleType.GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic), Is.Not.Null, "Disabling the tab while the modal is open must cancel the session without saving.");
         Assert.That(lifecycleType.GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic), Is.Null, "Tab activation tracking must not add per-frame polling.");
         Assert.That(effectType.GetMethod("CreatePreview", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null, "Tab activation must reach the requirement effect lifecycle as a token, without spawning a second renderer.");
         Assert.That(effectType.GetMethod("RemovePreview", BindingFlags.Static | BindingFlags.NonPublic), Is.Not.Null, "Closing the settings tab must release the activation token so metadata gating resumes.");
@@ -1989,9 +2011,10 @@ internal sealed class FerrofluidToggleTests
         Assert.That(shouldRun!.Invoke(null, [false]), Is.EqualTo(false));
         Assert.That(shouldRun.Invoke(null, [true]), Is.EqualTo(true));
 
-        using Stream? bsmlStream = pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.modifiers.bsml");
+        using Stream? bsmlStream = pluginAssembly.GetManifestResourceStream("ChromaGLS.Settings.ferrofluid-settings.bsml");
         using StreamReader reader = new(bsmlStream!);
         string bsml = reader.ReadToEnd();
-        Assert.That(bsml, Does.Contain("text='Show ferrofluid torus' value='ferrofluid-body-enabled'"), "The menu must describe complete torus visibility rather than body-only isolation.");
+        Assert.That(bsml, Does.Contain("text='Show ferrofluid torus'"), "The modal must describe complete torus visibility rather than body-only isolation.");
+        Assert.That(bsml, Does.Contain("value='ferrofluid-body-enabled'"), "The modal must expose the complete torus visibility toggle.");
     }
 }

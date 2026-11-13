@@ -1,0 +1,53 @@
+// V3 vfxEventBoxGroups[] entry with its _fxEventsCollection tables.
+// All customData keys shown are optional examples, not defaults.
+{
+  "vfxEventBoxGroups": [
+    {
+      "b": 83.344,        // group start beat
+      "g": 2,             // environment FX group id, not a light group
+      "t": 1,             // 1 = Float (uses _fl), 0 = Int (uses _il). 2 Bool is declared but 1.44.1 does not load it
+      "e": [
+        {
+          "f": {
+            "f": 1,       // 1 = Division, 2 = StepAndOffset
+            "p": 1,       // section count for Division, offset for StepAndOffset
+            "t": 0,       // zero-based section index for Division, step for StepAndOffset (2 = every second chunk)
+            "r": 0,       // 1 = reversed
+            "c": 0,       // chunk count, 0 = each effect element its own chunk
+            "n": 0,       // randomization: 0 = off, 1 = keep order, 2 = random elements
+            "s": 0,       // randomization seed
+            "l": 0.0,     // limit fraction 0..1, 0 = none
+            "d": 0        // what the limit caps: 1 = duration, 2 = distribution, 3 = both
+          },
+          "w": 0.0,       // beat distribution value in beats
+          "d": 2,         // 1 = wave (total span), 2 = step (per step)
+          "s": 0,         // effect value distribution
+          "t": 2,         // 1 = wave, 2 = step
+          "b": 0,         // 1 = apply distribution to the first event too
+          "i": 0,         // distribution easing, 0 = linear. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#integer-easing-ids
+          "l": [0]        // zero-based indices into _fxEventsCollection._fl (or _il for t 0), not inline events
+        }
+      ]
+    }
+  ],
+  "_fxEventsCollection": {
+    "_fl": [              // FloatFX event objects, referenced by groups with t = 1. Float values with easing, including ChromaGLS customData.easing.
+      {
+        "b": 0,           // beat offset from the group that references it
+        "p": 0,           // 1 = hold previous value
+        "v": 1.0,         // float value, meaning depends on the effect and environment
+        "i": 0,           // transition easing, 0 = linear, -1 = instant
+        "customData": {
+          "easing": "IO^3"  // FloatFX easing curve. Overrides i when ChromaGLS is enabled. Names or IDs -1..30 and 100..104 (Cat 103, CatS 104). https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#property-reference
+        }
+      }
+    ],
+    "_il": [              // IntFX event objects, referenced by groups with t = 0. Integer values with no transition easing or ChromaGLS extensions.
+      {
+        "b": 0,           // beat offset from the group that references it
+        "p": 0,           // 1 = hold previous value
+        "v": 1            // integer value, no easing and no ChromaGLS keys. Set the group t to 0 to use this table
+      }
+    ]
+  }
+}

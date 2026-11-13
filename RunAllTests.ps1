@@ -30,7 +30,10 @@ param(
 
     [string]$MonoPath = $null,
 
-    [string]$Test = $null
+    [string]$Test = $null,
+
+    # Compile only: forwards -NoDeploy to BuildAllVersions.ps1 so nothing installs into the game.
+    [switch]$NoDeploy
 )
 
 Set-StrictMode -Version Latest
@@ -78,7 +81,11 @@ foreach ($ver in $VersionsToTest) {
     Write-Host "=== Testing $configuration ===" -ForegroundColor Cyan
 
     # Isolate the build script's exit code so one failed target does not prevent the remaining matrix entries from reporting results.
-    & pwsh -NoProfile -File $BuildScript -Version $ver -Release
+    $buildInvocation = @('-NoProfile', '-File', $BuildScript, '-Version', $ver, '-Release')
+    if ($NoDeploy) {
+        $buildInvocation += '-NoDeploy'
+    }
+    & pwsh @buildInvocation
     if ($LASTEXITCODE -ne 0) {
         $FailedTests += $configuration
         continue

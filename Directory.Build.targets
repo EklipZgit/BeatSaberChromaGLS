@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
+  <!-- The SDK does not apply plain Debug defaults to versioned Debug configurations. -->
+  <PropertyGroup Condition="$(Configuration.StartsWith('Debug-'))">
+    <Optimize>false</Optimize>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <DefineConstants>$(DefineConstants);DEBUG</DefineConstants>
+  </PropertyGroup>
+
   <!--Original target only runs on "Release" configuration, this is modified to look for the "RELEASE" constant instead-->
   <PropertyGroup>
     <DisableZipRelease>false</DisableZipRelease>

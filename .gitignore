@@ -284,8 +284,10 @@ Ferrofluid.Unity/ProjectSettings/*
 !Ferrofluid.Unity/Packages/
 !Ferrofluid.Unity/Packages/manifest.json
 !Ferrofluid.Unity/Packages/packages-lock.json
-# CI builds the embedded bundle before compiling the plugin.
+# CI builds the core bundle and optional reflection pack before compiling the plugin.
 ChromaGLS/Settings/ferrofluid-windows.bundle*
+ChromaGLS/Settings/ferrofluid-reflections-windows.bundle*
+ChromaGLS/Settings/ferrofluid-reflections-pack.json
 ChromaGLS/Settings/Settings
 ChromaGLS/Settings/Settings.manifest
 
@@ -293,3 +295,9 @@ ChromaGLS/Settings/Settings.manifest
 *.ulf
 *.alf
 UnityEntitlementLicense.xml
+
+# Local malformed copy/export artifacts from one-off shell diagnostics.
+/Ferrofluid.Unity/Assets/Editor*cp FerrofluidProbeObserver.cs*
+/Ferrofluid.Unity/SourceTextures/RoomReflections$b
+/Ferrofluid.Unity/Assets/Editor/Diagnostics/
+/Ferrofluid.Unity/DiagnosticCaptures/

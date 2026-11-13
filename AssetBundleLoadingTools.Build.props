@@ -1,0 +1,39 @@
+<Project>
+  <PropertyGroup>
+    <AssetBundleLoadingToolsVersion Condition="'$(_ConfigGameVersion)' == '1.34.2'">1.1.3</AssetBundleLoadingToolsVersion>
+    <AssetBundleLoadingToolsVersion Condition="'$(_ConfigGameVersion)' == '1.37.1'">1.1.6</AssetBundleLoadingToolsVersion>
+    <AssetBundleLoadingToolsVersion Condition="'$(_ConfigGameVersion)' == '1.40.8'">1.1.10</AssetBundleLoadingToolsVersion>
+    <AssetBundleLoadingToolsVersion Condition="'$(_ConfigGameVersion)' == '1.42.1' Or '$(_ConfigGameVersion)' == '1.44.1'">1.1.13</AssetBundleLoadingToolsVersion>
+    <_AssetBundleLoadingToolsCacheRoot>$(LOCALAPPDATA)</_AssetBundleLoadingToolsCacheRoot>
+    <_AssetBundleLoadingToolsCacheRoot Condition="'$(_AssetBundleLoadingToolsCacheRoot)' == ''">$(MSBuildUserExtensionsPath)</_AssetBundleLoadingToolsCacheRoot>
+    <AssetBundleLoadingToolsCacheDirectory Condition="'$(AssetBundleLoadingToolsCacheDirectory)' == ''">$(_AssetBundleLoadingToolsCacheRoot)/ChromaGLS/BuildDependencies/AssetBundleLoadingTools</AssetBundleLoadingToolsCacheDirectory>
+    <_AssetBundleLoadingToolsCachePath>$(AssetBundleLoadingToolsCacheDirectory)/$(AssetBundleLoadingToolsVersion)/AssetBundleLoadingTools.dll</_AssetBundleLoadingToolsCachePath>
+    <AssetBundleLoadingToolsPath Condition="'$(AssetBundleLoadingToolsPath)' == '' And Exists('$(BeatSaberDir)/Plugins/AssetBundleLoadingTools.dll')">$(BeatSaberDir)/Plugins/AssetBundleLoadingTools.dll</AssetBundleLoadingToolsPath>
+    <AssetBundleLoadingToolsPath Condition="'$(AssetBundleLoadingToolsPath)' == ''">$(_AssetBundleLoadingToolsCachePath)</AssetBundleLoadingToolsPath>
+  </PropertyGroup>
+
+  <!-- These are the approved BeatMods packages for the supported game targets, not a moving latest release. -->
+  <PropertyGroup Condition="'$(AssetBundleLoadingToolsVersion)' == '1.1.3'">
+    <_AssetBundleLoadingToolsUrl>https://beatmods.com/files/306/3563/AssetBundleLoadingTools_universal_v1.1.3.zip</_AssetBundleLoadingToolsUrl>
+    <_AssetBundleLoadingToolsMd5>58436af7200e98360b1c49b2c8d0dc9a</_AssetBundleLoadingToolsMd5>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(AssetBundleLoadingToolsVersion)' == '1.1.6'">
+    <_AssetBundleLoadingToolsUrl>https://beatmods.com/files/306/3560/AssetBundleLoadingTools_universal_v1.1.6.zip</_AssetBundleLoadingToolsUrl>
+    <_AssetBundleLoadingToolsMd5>defa53f27ceb7556bd3ee648b91db482</_AssetBundleLoadingToolsMd5>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(AssetBundleLoadingToolsVersion)' == '1.1.10'">
+    <_AssetBundleLoadingToolsUrl>https://beatmods.com/files/306/3557/AssetBundleLoadingTools_universal_v1.1.10.zip</_AssetBundleLoadingToolsUrl>
+    <_AssetBundleLoadingToolsMd5>10bea8b347711c95e525542503366fe3</_AssetBundleLoadingToolsMd5>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(AssetBundleLoadingToolsVersion)' == '1.1.13'">
+    <_AssetBundleLoadingToolsUrl>https://beatmods.com/files/306/3555/AssetBundleLoadingTools_universal_v1.1.13.zip</_AssetBundleLoadingToolsUrl>
+    <_AssetBundleLoadingToolsMd5>a73d9e543fb856f28b485c17c38af4a2</_AssetBundleLoadingToolsMd5>
+  </PropertyGroup>
+
+  <!-- Cache only the compile-time reference. Runtime dependency installation remains the mod manager's job. -->
+  <Target Name="AcquireAssetBundleLoadingToolsReference"
+          BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(AssetBundleLoadingToolsVersion)' != '' And '$(AssetBundleLoadingToolsPath)' == '$(_AssetBundleLoadingToolsCachePath)'">
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildThisFileDirectory)ResolveAssetBundleLoadingTools.ps1&quot; -Version &quot;$(AssetBundleLoadingToolsVersion)&quot; -DownloadUrl &quot;$(_AssetBundleLoadingToolsUrl)&quot; -ExpectedDllMd5 &quot;$(_AssetBundleLoadingToolsMd5)&quot; -CacheDirectory &quot;$(AssetBundleLoadingToolsCacheDirectory)&quot;"/>
+  </Target>
+</Project>

@@ -49,6 +49,25 @@ internal sealed class GlsV3ColorEasingTests
         chromafier = plugin.GetType("ChromaGLS.HarmonyPatches.GlsColorChromafier", true)!;
     }
 
+    [Test]
+    public void SplineMetadataSurvivesV3ConversionAndCopies(
+        [Values("easing", "colorEasing", "strobeColorEasing")] string key,
+        [Values("103", "104", "\"Cat\"", "\"CatS\"")] string raw)
+    {
+        string json = "[{\"b\":0,\"g\":1,\"e\":[{\"f\":{\"f\":2,\"p\":0,\"t\":1},\"e\":["
+            + "{\"b\":0,\"i\":1,\"c\":0,\"s\":1},"
+            + "{\"b\":1,\"i\":1,\"c\":1,\"s\":1,\"customData\":{\"" + key + "\":" + raw + "}}]}]}]";
+        object[] events = UnpackJson(json, 0);
+        object node = events[1];
+        for (int generation = 0; generation < 3; generation++)
+        {
+            Assert.That(node, Is.InstanceOf<ICustomData>());
+            Assert.That(((ICustomData)node).customData.Get<object>(key),
+                Is.EqualTo(JsonConvert.DeserializeObject(raw)), key + " must retain the incoming spline mode.");
+            node = node.GetType().GetMethod("GetCopy")!.Invoke(node, null)!;
+        }
+    }
+
     // Controls expose native capabilities rather than assuming that 1.29.1 has the modern enum's BS-specific variants.
     [Test]
     public void ReportNativeCurveNames()
@@ -409,13 +428,13 @@ internal sealed class GlsV3ColorEasingTests
         Assert.That(parse!.Invoke(null, integral), Is.True);
     }
 
-    // Invalid values and Instant's stale metadata must not enable an eased interval or leak through Extend inheritance.
+    // Invalid values and Instant's stale metadata must not enable an eased interval or leak through
+    // Extend inheritance. Recognized internal names are valid input and covered elsewhere.
     [TestCase("\"4\"")]
-    [TestCase("\"easeInSine\"")]
     [TestCase("4.5")]
     [TestCase("31")]
     [TestCase("99")]
-    [TestCase("103")]
+    [TestCase("105")]
     [TestCase("-1")]
     [TestCase("0")]
     [TestCase("null")]

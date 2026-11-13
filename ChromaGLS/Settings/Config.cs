@@ -7,7 +7,7 @@ using JetBrains.Annotations;
 
 namespace ChromaGLS.Settings
 {
-    // Only the enable toggles are saved. Tuning values marked [Ignore] reset when Beat Saber restarts.
+    // The enable toggles and the parabola light settings persist. Ferrofluid tuning values marked [Ignore] reset when Beat Saber restarts.
     [UsedImplicitly(ImplicitUseTargetFlags.Members)]
     internal class Config
     {
@@ -18,6 +18,16 @@ namespace ChromaGLS.Settings
         public virtual bool FerrofluidCubeEnabled { get; set; } = false;
 
         public virtual bool FerrofluidSphereEnabled { get; set; } = false;
+
+        public virtual bool FluidCubeEnabled { get; set; } = false;
+
+        public virtual bool FluidSphereEnabled { get; set; } = false;
+
+        public virtual ReflectionQuality ReflectionsQuality { get; set; } = ReflectionQuality.High;
+
+        public virtual bool ReflectionsQualityInitialized { get; set; }
+
+        public virtual bool FerrofluidReflectionMapsDeclined { get; set; }
 
         [Ignore]
         public virtual bool FerrofluidSpikesEnabled { get; set; } = true;
@@ -41,49 +51,47 @@ namespace ChromaGLS.Settings
         public virtual float FerrofluidReflectivity { get; set; } = 0.21f;
 
         [Ignore]
-        public virtual float FerrofluidMatteSheen { get; set; } = 0.57f;
-
-        // Degrees inward from the silhouette, with 90 covering the whole surface.
-        [Ignore]
-        public virtual float FerrofluidMatteAngle { get; set; } = 10f;
-
-        // Reflection coverage uses the same angle convention as the matte sheen.
-        [Ignore]
-        public virtual float FerrofluidReflectionAngle { get; set; } = 15f;
+        public virtual float FerrofluidBaseRed { get; set; } = 0.01f;
 
         [Ignore]
-        public virtual float FerrofluidMatteRotationX { get; set; } = 76f;
+        public virtual float FerrofluidBaseGreen { get; set; } = 0.01f;
 
         [Ignore]
-        public virtual float FerrofluidMatteRotationY { get; set; } = 295f;
+        public virtual float FerrofluidBaseBlue { get; set; } = 0.01f;
 
         [Ignore]
-        public virtual float FerrofluidMatteRotationZ { get; set; } = 174f;
+        public virtual float FerrofluidRoomReflectionStrength { get; set; } = 1f;
 
         [Ignore]
-        public virtual float FerrofluidReflectionRotationX { get; set; } = 244f;
+        public virtual float FerrofluidFeetReflectionStrength { get; set; } = 1f;
 
         [Ignore]
-        public virtual float FerrofluidReflectionRotationY { get; set; } = 210f;
+        public virtual float FerrofluidParabolaReflectionStrength { get; set; } = 1f;
 
         [Ignore]
-        public virtual float FerrofluidReflectionRotationZ { get; set; } = 167f;
+        public virtual float FerrofluidParabolaReflectionSaturation { get; set; } = 1f;
 
         [Ignore]
-        public virtual float FerrofluidSpikeBaseSize { get; set; } = 3f;
+        public virtual float FerrofluidThinFilmStrength { get; set; } = 1f;
+
+        [Ignore]
+        public virtual float FerrofluidThinFilmAngleRate { get; set; } = 1f;
+
+        [Ignore]
+        public virtual float FerrofluidSpikeBaseSize { get; set; } = 5.3f;
 
         [Ignore]
         public virtual float FerrofluidSpikeHeightScale { get; set; } = 0.9f;
 
         [Ignore]
-        public virtual float FerrofluidSpikeMoundCurvature { get; set; } = 2f;
+        public virtual float FerrofluidSpikeMoundCurvature { get; set; } = 1.4f;
 
         [Ignore]
         public virtual float FerrofluidSpikeDensity { get; set; } = 0.35f;
 
         // Cut away the thin membrane that bilinear sampling leaves between spike cells.
         [Ignore]
-        public virtual float FerrofluidSpikeBaseCutoff { get; set; } = 0.1f;
+        public virtual float FerrofluidSpikeBaseCutoff { get; set; } = 0.15f;
 
         [Ignore]
         public virtual float ParticleMass { get; set; } = 1.86f;
@@ -126,7 +134,7 @@ namespace ChromaGLS.Settings
         public virtual float BulgeRadius { get; set; } = 0.31f;
 
         [Ignore]
-        public virtual float BulgeHeight { get; set; } = 0.12f;
+        public virtual float BulgeHeight { get; set; } = 0.156f;
 
         [Ignore]
         public virtual float FerrofluidSpikeHeightRadius { get; set; } = 0.31f;
@@ -135,13 +143,13 @@ namespace ChromaGLS.Settings
         public virtual float FerrofluidSpikeTiltRadius { get; set; } = 0.73f;
 
         [Ignore]
-        public virtual float HeightFalloffExponent { get; set; } = 2.4f;
+        public virtual float HeightFalloffExponent { get; set; } = 3f;
 
         [Ignore]
-        public virtual float PeakWidth { get; set; } = 0.03f;
+        public virtual float PeakWidth { get; set; } = 0.5f;
 
         [Ignore]
-        public virtual float HeightGain { get; set; } = 0.87f;
+        public virtual float HeightGain { get; set; } = 1.43f;
 
         [Ignore]
         public virtual float BackHeightLoss { get; set; } = 1.19f;
@@ -151,7 +159,7 @@ namespace ChromaGLS.Settings
 
         // Cap magnetic height without limiting spike tilt.
         [Ignore]
-        public virtual float MagnetHeightStrengthCap { get; set; } = 0.74f;
+        public virtual float MagnetHeightStrengthCap { get; set; } = 0.66f;
 
         // Radius around the magnet that uses the full height cap, without changing tilt.
         [Ignore]
@@ -188,17 +196,13 @@ namespace ChromaGLS.Settings
         public virtual float FerrofluidSpikeSpringDamping { get; set; } = 12f;
 
         [Ignore]
-        public virtual float FerrofluidPrimitiveSpikeSize { get; set; } = 0.7f;
+        public virtual float FerrofluidPrimitiveSpikeSize { get; set; } = 0.35f;
 
         [Ignore]
         public virtual float FerrofluidPrimitiveTipRoundness { get; set; }
 
         [Ignore]
         public virtual float FerrofluidPrimitiveTipCapRounding { get; set; } = 0.81f;
-
-        // Cube and sphere normals sample the environment map's bright ceiling and floor, so they need less ambient light.
-        [Ignore]
-        public virtual float FerrofluidPrimitiveAmbientScale { get; set; } = 0.15f;
 
         // Flattening radius on the side facing away from the magnet, as a fraction of BulgeRadius.
         [Ignore]
@@ -222,11 +226,76 @@ namespace ChromaGLS.Settings
         [Ignore]
         public virtual float FerrofluidCubeRoundness { get; set; } = 0.48f;
 
-        // Rotate the octahedral spike layout around each shape's up axis, in degrees.
         [Ignore]
-        public virtual float FerrofluidCubeChartYaw { get; set; } = 45f;
+        public virtual bool FerrofluidFloorAssistanceEnabled { get; set; } = true;
+
+        [Ignore]
+        public virtual float FerrofluidCubeFloorFriction { get; set; } = FerrofluidGrabPhysics.DefaultCubeFloorFriction;
+
+        [Ignore]
+        public virtual float FerrofluidCubeCornerFriction { get; set; } = FerrofluidGrabPhysics.DefaultCubeCornerFriction;
+
+        [Ignore]
+        public virtual float FerrofluidCubeFaceLandingStrength { get; set; } = FerrofluidGrabPhysics.DefaultCubeFaceLandingStrength;
+
+        [Ignore]
+        public virtual float FerrofluidCubeFaceDampingStrength { get; set; } = FerrofluidGrabPhysics.DefaultCubeFaceDampingStrength;
+
+        [Ignore]
+        public virtual float FerrofluidCubeFaceDampingExponent { get; set; } = FerrofluidGrabPhysics.DefaultCubeFaceDampingExponent;
+
+        [Ignore]
+        public virtual float FerrofluidCubeFaceDampingStartAngle { get; set; } = FerrofluidGrabPhysics.DefaultCubeFaceDampingStartAngle;
 
         [Ignore]
         public virtual float FerrofluidSphereChartYaw { get; set; }
+
+        [Ignore]
+        public virtual float FerrofluidHomeElasticityGain { get; set; } = 0.1f;
+
+        [Ignore]
+        public virtual float FerrofluidHomeQuadraticPower { get; set; } = 8f;
+
+        // Fraction of the travel bound where the quadratic ramp starts. 0.04 is 2% face width.
+        [Ignore]
+        public virtual float FerrofluidHomeSoftRange { get; set; } = 0.04f;
+
+        [Ignore]
+        public virtual float FerrofluidHomeTravelLimit { get; set; } = 0.5f;
+
+        [Ignore]
+        public virtual float FerrofluidHomeDampingGain { get; set; } = 1f;
+
+        public virtual bool ParabolicFloorLightEnabled { get; set; } = true;
+
+        public virtual float ParabolicFloorLightBrightness { get; set; } = 0.43f;
+
+        public virtual float ParabolicFloorLightRed { get; set; }
+
+        public virtual float ParabolicFloorLightGreen { get; set; } = 0.86f;
+
+        public virtual float ParabolicFloorLightBlue { get; set; } = 2.47f;
+
+        public virtual float ParabolicFloorLightWidthScale { get; set; } = 3.2f;
+
+        public virtual float ParabolicFloorLightOffsetX { get; set; }
+
+        public virtual float ParabolicFloorLightOffsetZ { get; set; }
+
+        public virtual float ParabolicFloorLightRotation { get; set; }
+
+        public virtual float ParabolicFloorLightLightWidthScale { get; set; } = 1f;
+
+        public virtual float ParabolicFloorLightBloomWidthScale { get; set; } = 0.96f;
+
+        public virtual float ParabolicFloorLightBloomBrightness { get; set; } = 1.25f;
+
+        public virtual float ParabolicFloorLightHdrGlowThreshold { get; set; } = 1.3f;
+
+        public virtual float ParabolicFloorLightHdrGlowWidthScale { get; set; } = 0.04f;
+
+        public virtual string MenuLightsJson { get; set; } = string.Empty;
+
+        public virtual float ParabolicFloorLightHdrGlowBrightness { get; set; } = 4f;
     }
 }

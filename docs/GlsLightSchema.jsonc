@@ -1,0 +1,55 @@
+// V3 lightColorEventBoxGroups[] entry.
+// All customData keys shown are optional examples, not defaults.
+{
+  "b": 83.344,            // group start beat
+  "g": 2,                 // light group id
+  "e": [
+    {
+      "f": {
+        "f": 1,           // 1 = Division, 2 = StepAndOffset
+        "p": 1,           // section count for Division, offset for StepAndOffset
+        "t": 0,           // zero-based section index for Division, step for StepAndOffset (2 = every second chunk)
+        "r": 0,           // 1 = reversed
+        "c": 0,           // chunk count, 0 = each light its own chunk
+        "n": 0,           // randomization: 0 = off, 1 = keep order, 2 = random elements
+        "s": 0,           // randomization seed
+        "l": 0.0,         // limit fraction 0..1, 0 = none
+        "d": 0            // what the limit caps: 1 = duration, 2 = distribution, 3 = both
+      },
+      "w": 0.0,           // beat distribution value in beats
+      "d": 2,             // 1 = wave (total span), 2 = step (per step)
+      "r": 0,             // brightness distribution value
+      "t": 2,             // 1 = wave, 2 = step
+      "b": 0,             // 1 = apply distribution to the first event too
+      "i": 0,             // distribution easing, 0 = linear. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#integer-easing-ids
+      "customData": {
+        "colorDistributions": ["h,0.2,L"],        // Normal RGBA shifts, "targets,offset,easing[,mode]". For mode, c (default if not specified) means per chunk, l means per light. Box distributions are applied before per-event distributions. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#color-and-brightness-distributions-colordistributions--strobecolordistributions
+        "strobeColorDistributions": ["s,-0.2,L"]  // Same everything as above, except applies to the strobe color half of the strobe cycle. When strobe color is not overridden, these adjust from whatever the main color is WITHOUT applying main colors color distributions to the strobe side first. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#color-and-brightness-distributions-colordistributions--strobecolordistributions
+      },
+      "e": [
+        {
+          "b": 0,         // beat offset from the group before beat distribution
+          "c": 0,         // -1 = none, 0 = primary, 1 = secondary, 2 = white
+          "s": 1.0,       // Brightness, 1 = 100%. Can go above 1.
+          "i": 1,         // 0 = instant, 1 = interpolate, 2 = extend previous
+          "f": 2,         // strobe cycles per beat, 0 = off unless strobeInterval overrides
+          "sb": 0.2,      // strobe brightness
+          "sf": 1,        // 0 = hard strobe, 1 = faded
+          "customData": {
+            "color": [1, 0.2, 0.1, 1],                        // RGB(A). RGB values > 1.0 are allowed and DO affect lights and fog differently at low brightnesses. 0,0,0 black lights also supported. If alpha is omitted, alpha is 1 (true for all RGB colors in ChromaGLS). Alpha multiplies normal brightness. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#color-format
+            "strobeColor": [0.2, 0.4, 1, 1],                  // Strobe RGB(A), alpha * sb. Omitted falls back to the normal color under the distribution rules (whether that is customData.color or just the nodes OE color type). https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#strobes
+            "colorDistributions": ["f,0.1,L,l"],              // Same grammar as the box entries except applies only to this one light event. Box runs first, and then per-event distributions are additive/subtractive on top of the box level distributions. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#color-and-brightness-distributions-colordistributions--strobecolordistributions
+            "strobeColorDistributions": ["h,-0.25,IOSn,l"],   // .... you get the idea https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#color-and-brightness-distributions-colordistributions--strobecolordistributions
+            "colorEasing": "Cat",                             // Color fade curve. Uses easing when omitted, or 0 for linear. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#independent-easing-tracks
+            "strobeColorEasing": "IO^2",                      // Strobe color fade curve. Same values and fallback as colorEasing. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#independent-easing-tracks
+            "easing": "IO^3",                                 // The easing to apply to the whole cross node transition. Unless each overridden respectively, applies as color fade easing, strobe color easing (between two strobe colors), and Strobe Interval fade (so how quickly a 1/2 strobe speeds up to become a 1/4th strobe or whatever). If both strobeColor easing and colorEasing are explicitly overridden then this effectively just becomes the strobe interval easing, giving you independent control of each of the 3 properties easings. Accepts abbreviations or raw enum IDs 1..30 (and Cat 103, CatS 104). https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#property-reference
+            "easingType": "HSV",                              // Color blend mode, RGB by default when omitted. "HSV" (case-sensitive) blends the short way around the hue wheel. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#rgb-and-hsv
+            "strobeInterval": 0.5,                            // Beats per strobe cycle. Must be > 0. Overrides f when ChromaGLS is enabled. Lets you create slower strobes than 1 beat, as well as arbitrarily fast strobes like 3.14159 strobes per beat, for example. 0.5 would strobe once every two beats. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#strobeinterval
+            "strobePulseWidth": 0.5,                          // Pulse width, 0..1 (default 0.5). Hard strobes hold normal for this fraction. Faded strobes peak here. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#strobepulsewidth
+            "strobeEasing": "IO^3"                            // Pulse fade curve, faded strobes only (sf 1). Names or IDs 0..30 and 100..102, no Cat. Default InOutCubic 9. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#strobeeasing
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+// V3 lightTranslationEventBoxGroups[] or lightRotationEventBoxGroups[] entry.
+// All customData keys shown are optional examples, not defaults.
+{
+  "b": 83.344,            // group start beat
+  "g": 2,                 // light group id
+  "e": [
+    {
+      "f": {
+        "f": 1,           // 1 = Division, 2 = StepAndOffset
+        "p": 1,           // section count for Division, offset for StepAndOffset
+        "t": 0,           // zero-based section index for Division, step for StepAndOffset (2 = every second chunk)
+        "r": 0,           // 1 = reversed
+        "c": 0,           // chunk count, 0 = each light its own chunk
+        "n": 0,           // randomization: 0 = off, 1 = keep order, 2 = random elements
+        "s": 0,           // randomization seed
+        "l": 0.0,         // limit fraction 0..1, 0 = none
+        "d": 0            // what the limit caps: 1 = duration, 2 = distribution, 3 = both
+      },
+      "w": 0.0,           // beat distribution value in beats
+      "d": 2,             // 1 = wave (total span), 2 = step (per step)
+      "s": 0,             // translation/gap distribution value
+      "t": 2,             // 1 = wave, 2 = step
+      "b": 0,             // 1 = apply distribution to the first event too
+      "i": 0,             // distribution easing, 0 = linear. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#integer-easing-ids
+      "a": 0,             // axis: 0 = X, 1 = Y, 2 = Z
+      "r": 0,             // 1 = flip direction, negates translation/rotation and its distribution. Does not need to be serialized in json when it is 0 I believe.
+      "l": [
+        {
+          "b": 0,         // beat offset from the group before beat distribution
+          "p": 0,         // 1 = hold previous value
+          "e": 0,         // native easing, 0 = linear, -1 = instant
+          "l": 0,         // ROTATION ONLY: extra 360-degree turns
+          "r": 90,        // ROTATION ONLY: degrees
+          "o": 0,         // ROTATION ONLY: 0 = automatic, 1 = clockwise, 2 = counterclockwise
+          "t": 1.0,       // TRANSLATION ONLY: normalized, -1 = -100%, 1 = 100%. Environment-scaled, values outside this range allowed. This kinda is just whatever scale Beat Games felt like for that thing on that day.
+          "customData": {
+            "easing": "CatS"  // Translation or rotational position easing curve. Overrides e.  IDs  -1..30 and 100..104 or Names in abbreviation format, EG IO^2 for in out quadratic, L for linear, OCr for out-circular, etc. https://github.com/EklipZgit/BeatSaberChromaGLS/blob/main/UsingChromaGLS.md#property-reference
+          }
+        }
+      ]
+    }
+  ]
+}

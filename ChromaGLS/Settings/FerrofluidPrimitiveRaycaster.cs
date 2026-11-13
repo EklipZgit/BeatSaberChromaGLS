@@ -37,6 +37,23 @@ namespace ChromaGLS.Settings
             });
         }
 
+        // A VR UI raycaster's own physics hit can outrank our analytic surface hit when its canvas
+        // sorting order is higher, even though the physical child collider sits inside the hull.
+        // Promote the matching outer hit only when the winner belongs to the same primitive.
+        internal static RaycastResult ResolveSurfaceHit(RaycastResult winner, List<RaycastResult> hits)
+        {
+            foreach (RaycastResult candidate in hits)
+            {
+                if (candidate.module is FerrofluidPrimitiveRaycaster primitive
+                    && winner.gameObject.transform.IsChildOf(primitive.transform))
+                {
+                    return candidate;
+                }
+            }
+
+            return winner;
+        }
+
         internal void Initialize(FerrofluidPrimitiveEffect effect)
         {
             _effect = effect;

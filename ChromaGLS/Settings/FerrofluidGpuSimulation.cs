@@ -7,8 +7,21 @@ namespace ChromaGLS.Settings
 {
 #pragma warning disable SA1202, SA1204
     // Run fluid pressure, forces, integration, and spike deformation on the GPU.
-    internal sealed class FerrofluidGpuSimulation : IDisposable
+    internal sealed partial class FerrofluidGpuSimulation : IDisposable
     {
+#pragma warning disable SA1201, SA1516 // Erased snapshot hook declarations precede the field block.
+        // Snapshot bookkeeping declarations live unimplemented in the normal build, so the calls
+        // and their argument expressions are erased entirely; the tweak partial supplies them.
+        partial void RecordSnapshotFloat(Material material, int propertyId, float value);
+        partial void RecordSnapshotFloat(Material material, string propertyName, float value);
+        partial void RecordSnapshotInt(Material material, int propertyId, int value);
+        partial void RecordSnapshotInt(Material material, string propertyName, int value);
+        partial void RecordSnapshotVector(Material material, int propertyId, Vector4 value);
+        partial void RecordSnapshotVector(Material material, string propertyName, Vector4 value);
+        partial void RecordSnapshotMatrix(Material material, int propertyId, Matrix4x4 value);
+        partial void RecordSnapshotTexture(Material material, int propertyId, Texture? texture);
+        partial void RecordSnapshotTexture(Material material, string propertyName, Texture? texture);
+
         private const int ParticleCount = 576;
         private const int ParticleTextureSize = 32;
         private const int FieldColumns = 48;
@@ -24,9 +37,6 @@ namespace ChromaGLS.Settings
         private const float PrimitiveOverpackFactor = 0.98f;
         private const float PrimitiveBaselineDensity = 0.45f;
 
-        private const int PrimitiveRelaxationIterations = 400;
-        private const int PrimitiveRelaxationNeighbors = 8;
-        private const float PrimitiveRelaxationStep = 1.0f;
         internal const int HeightMapSize = 256;
         internal const int PrimitiveHeightMapSize = 256;
 
@@ -53,12 +63,9 @@ namespace ChromaGLS.Settings
         internal const float SourceMagnetSurfaceGap = 0.14f;
 
         // Run at 120 Hz with an 8 ms integration step and at most two catch-up ticks per rendered frame.
-        private const float SimulationInterval = 1f / 120f;
         private const float SimulationDeltaTimeMilliseconds = 8f;
-        private const int MaximumSimulationTicksPerFrame = 2;
 
-        // Reuse relaxed spike layouts when a shape is recreated with the same settings.
-        private static readonly Dictionary<long, Vector2[]> RestPositionCache = new();
+        private static readonly Dictionary<(FerrofluidSurfaceShape Shape, int Count, float Roundness, Vector4 Pressure, float Damping), (Vector3[] Positions, float[] Densities)> PrimitiveHomeCache = new();
         private static readonly int StateTextureId = Shader.PropertyToID("_StateTex");
         private static readonly int RestPositionTextureId = Shader.PropertyToID("_RestPositionTex");
         private static readonly int DensityPressureTextureId = Shader.PropertyToID("_DensityPressureTex");
@@ -72,13 +79,12 @@ namespace ChromaGLS.Settings
         private static readonly int SpikeSpringStrengthId = Shader.PropertyToID("_SpikeSpringStrength");
         private static readonly int SpikeSpringDampingId = Shader.PropertyToID("_SpikeSpringDamping");
         private static readonly int ReflectivityId = Shader.PropertyToID("_Reflectivity");
+        private static readonly int BaseColorId = Shader.PropertyToID("_FerrofluidBaseColor");
+        private static readonly int ReflectionStrengthsId = Shader.PropertyToID("_FerrofluidReflectionStrengths");
+        private static readonly int ThinFilmStrengthId = Shader.PropertyToID("_FerrofluidThinFilmStrength");
+        private static readonly int ThinFilmAngleRateId = Shader.PropertyToID("_ThinFilmAngleRate");
 
         private static readonly int FadeAlphaId = Shader.PropertyToID("_FadeAlpha");
-        private static readonly int MatteSheenId = Shader.PropertyToID("_MatteSheen");
-        private static readonly int MatteAngleId = Shader.PropertyToID("_MatteAngle");
-        private static readonly int ReflectionAngleId = Shader.PropertyToID("_ReflectionAngle");
-        private static readonly int MatteLightRotationId = Shader.PropertyToID("_MatteLightRotation");
-        private static readonly int ReflectionRotationId = Shader.PropertyToID("_ReflectionRotation");
         private static readonly int EffectObjectToWorldId = Shader.PropertyToID("_FerrofluidObjectToWorld");
         private static readonly int EnvironmentTextureId = Shader.PropertyToID("_EnvironmentTex");
         private static readonly int ThinFilmTextureId = Shader.PropertyToID("_ThinFilmTex");
@@ -123,6 +129,11 @@ namespace ChromaGLS.Settings
 
         private static readonly int SurfaceShapeModeId = Shader.PropertyToID("_SurfaceShapeMode");
         private static readonly int SurfaceRoundnessId = Shader.PropertyToID("_SurfaceRoundness");
+        private static readonly int PrimitiveFrameRotationId = Shader.PropertyToID("_PrimitiveFrameRotation");
+        private static readonly int PrimitiveLinearVelocityDeltaId = Shader.PropertyToID("_PrimitiveLinearVelocityDelta");
+        private static readonly int PrimitivePreviousAngularVelocityId = Shader.PropertyToID("_PrimitivePreviousAngularVelocity");
+        private static readonly int PrimitiveAngularVelocityId = Shader.PropertyToID("_PrimitiveAngularVelocity");
+        private static readonly int MagnetHeightAmplificationId = Shader.PropertyToID("_MagnetHeightAmplification");
 
         private static readonly int ParticleTextureSizeId = Shader.PropertyToID("_ParticleTextureSize");
         private static readonly int PrimitiveSpikeSizeId = Shader.PropertyToID("_PrimitiveSpikeSize");
@@ -132,7 +143,6 @@ namespace ChromaGLS.Settings
         private static readonly int SpikeMoundCurvatureId = Shader.PropertyToID("_SpikeMoundCurvature");
         private static readonly int PrimitiveSpikeHeightRadiusId = Shader.PropertyToID("_PrimitiveSpikeHeightRadius");
         private static readonly int PrimitiveSpikeTiltRadiusId = Shader.PropertyToID("_PrimitiveSpikeTiltRadius");
-        private static readonly int PrimitiveAmbientScaleId = Shader.PropertyToID("_PrimitiveAmbientScale");
         private static readonly int PrimitiveFlattenRadiusId = Shader.PropertyToID("_PrimitiveFlattenRadius");
         private static readonly int PrimitiveFlattenExponentId = Shader.PropertyToID("_PrimitiveFlattenExponent");
         private static readonly int PrimitiveGlobalFlattenId = Shader.PropertyToID("_PrimitiveGlobalSpikeFlatten");
@@ -143,6 +153,12 @@ namespace ChromaGLS.Settings
         private static readonly int SiteBulgeTextureId = Shader.PropertyToID("_SiteBulgeTex");
         private static readonly int RestSurfaceTextureId = Shader.PropertyToID("_RestSurfaceTex");
         private static readonly int PrimitiveYawCosSinId = Shader.PropertyToID("_PrimitiveYawCosSin");
+        private static readonly int PrimitiveHomeElasticityGainId = Shader.PropertyToID("_PrimitiveHomeElasticityGain");
+        private static readonly int PrimitiveHomeQuadraticGainId = Shader.PropertyToID("_PrimitiveHomeQuadraticGain");
+        private static readonly int PrimitiveHomeSoftRangeId = Shader.PropertyToID("_PrimitiveHomeSoftRange");
+        private static readonly int PrimitiveHomeTravelLimitId = Shader.PropertyToID("_PrimitiveHomeTravelLimit");
+        private static readonly int PrimitiveHomeDampingGainId = Shader.PropertyToID("_PrimitiveHomeDampingGain");
+        private static readonly int PrimitiveRestDensityReadyId = Shader.PropertyToID("_PrimitiveRestDensityReady");
         private static readonly int PrimitiveCellMetricId = Shader.PropertyToID("_PrimitiveCellMetric");
 
         private static readonly int BackHeightFalloffExponentId = Shader.PropertyToID("_BackHeightFalloffExponent");
@@ -159,6 +175,10 @@ namespace ChromaGLS.Settings
         private readonly FerrofluidSurfaceShape _shape;
         private Texture2D _restPositionTexture;
         private Vector2[]? _primitiveRestPositions;
+        private Vector3[]? _bakedPrimitiveHomes;
+        private float[]? _bakedPrimitiveDensities;
+        private (FerrofluidSurfaceShape Shape, int Count, float Roundness, Vector4 Pressure, float Damping)? _homeBakeKey;
+        private float _homeChartYaw;
 
         private float _lastFadeAlpha = 1f;
 
@@ -189,7 +209,43 @@ namespace ChromaGLS.Settings
         // Carry fractional frame time forward rather than changing the fixed integration step.
         private float _simulationAccumulator;
         private float _lastSimulationAt;
+        private Quaternion _previousPrimitiveRotation;
+        private Vector3 _previousPrimitiveLinearVelocity;
+        private Vector3 _previousPrimitiveAngularVelocity;
+        private Vector3 _pendingPrimitiveLinearVelocity;
+        private Vector3 _pendingPrimitiveAngularVelocity;
+        private bool _primitiveHistoryValid;
         private bool _renderEnabled;
+        private bool _spikesAllowed = true;
+        private float _absSourceWorldScale = 1f;
+        private float _shadowDeformationPerScale = 1f;
+
+        internal Mesh SurfaceMesh => _surfaceMesh;
+
+        internal Material SurfaceMaterial => _surfaceMaterial;
+
+        // Conservative bounds envelope for the GPU shadow mask in world units.
+        internal float CalculateShadowDeformationPadding()
+            => _shadowDeformationPerScale * _absSourceWorldScale;
+
+        // Spring overshoot beyond the clamped spike target at maximum amplification, maximum
+        // magnetic bulge, and a slack term covering the density-blended support region.
+        // Capture framing only, not a physics clamp.
+        private float EvaluateShadowDeformationPerScale(in Config config)
+        {
+            const float maxAmplification = 1.6f;
+            float maxSpringTarget = Mathf.Max(
+                0.44f,
+                0.44f + (maxAmplification * (Mathf.Min(Mathf.Clamp(config.MaximumHeight, 0.2f, 3f), 1.37f) - 0.44f)));
+            float maxBulge = Mathf.Clamp(config.BulgeHeight, 0f, 0.2f)
+                * Mathf.Clamp01(config.MagnetHeightStrengthCap)
+                * (maxAmplification + 1f)
+                * Mathf.Max(1f, Mathf.Clamp(config.FerrofluidSphereBulgeScale, 0f, 1.5f));
+            return
+                (2f * Mathf.Abs(SourceFluidHeightScale * _spikeHeightScale) * HeightFactorValue * maxSpringTarget)
+                + maxBulge
+                + 0.2f;
+        }
 
         private FerrofluidGpuSimulation(
             MeshFilter meshFilter,
@@ -228,11 +284,17 @@ namespace ChromaGLS.Settings
                 enableInstancing = true,
             };
             _surfaceMaterial.SetTexture(EnvironmentTextureId, resources.EnvironmentTexture);
+            RecordSnapshotTexture(_surfaceMaterial, EnvironmentTextureId, resources.EnvironmentTexture);
             _surfaceMaterial.SetTexture(ThinFilmTextureId, resources.ThinFilmTexture);
+            RecordSnapshotTexture(_surfaceMaterial, ThinFilmTextureId, resources.ThinFilmTexture);
+            FerrofluidRoomReflections.RequestEnvironment();
 
             _simulationMaterial.SetFloat(SurfaceShapeModeId, (float)shape);
+            RecordSnapshotFloat(_simulationMaterial, SurfaceShapeModeId, (float)shape);
             _surfaceMaterial.SetFloat(SurfaceShapeModeId, (float)shape);
+            RecordSnapshotFloat(_surfaceMaterial, SurfaceShapeModeId, (float)shape);
             _simulationMaterial.SetInt(ParticleTextureSizeId, _particleTextureSize);
+            RecordSnapshotInt(_simulationMaterial, ParticleTextureSizeId, _particleTextureSize);
             _stateA = CreateRenderTexture("ChromaGLS Ferrofluid State A", _particleTextureSize, FilterMode.Point, TextureWrapMode.Repeat);
             _stateB = CreateRenderTexture("ChromaGLS Ferrofluid State B", _particleTextureSize, FilterMode.Point, TextureWrapMode.Repeat);
             _densityPressure = CreateRenderTexture("ChromaGLS Ferrofluid Density Pressure", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
@@ -249,12 +311,15 @@ namespace ChromaGLS.Settings
             int candidateHeight = shape == FerrofluidSurfaceShape.Torus ? candidateMapSize : candidateMapSize * 2;
             _coarseCandidates = CreateRenderTexture("ChromaGLS Ferrofluid Coarse Height Candidates", candidateWidth, FilterMode.Point, TextureWrapMode.Clamp, candidateHeight);
             _simulationMaterial.SetFloat(CoarseCandidateSizeId, candidateMapSize);
+            RecordSnapshotFloat(_simulationMaterial, CoarseCandidateSizeId, candidateMapSize);
             _simulationMaterial.SetTexture(CoarseCandidateTextureId, _coarseCandidates);
+            RecordSnapshotTexture(_simulationMaterial, CoarseCandidateTextureId, _coarseCandidates);
 
             // Each particle owns one spring-state texel. Start at zero so spikes settle into shape over the first few ticks.
             _springStateA = CreateRenderTexture("ChromaGLS Ferrofluid Spring State A", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
             _springStateB = CreateRenderTexture("ChromaGLS Ferrofluid Spring State B", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
             _surfaceMaterial.SetInt(ParticleTextureSizeId, _particleTextureSize);
+            RecordSnapshotInt(_surfaceMaterial, ParticleTextureSizeId, _particleTextureSize);
             _springCurrent = _springStateA;
             _springNext = _springStateB;
             if (shape != FerrofluidSurfaceShape.Torus)
@@ -287,9 +352,16 @@ namespace ChromaGLS.Settings
             if (_siteSurface != null)
             {
                 _simulationMaterial.SetTexture(StateTextureId, _currentState);
+                RecordSnapshotTexture(_simulationMaterial, StateTextureId, _currentState);
                 _simulationMaterial.SetTexture(RestPositionTextureId, _restPositionTexture);
+                RecordSnapshotTexture(_simulationMaterial, RestPositionTextureId, _restPositionTexture);
+                _surfaceMaterial.SetTexture(RestPositionTextureId, _restPositionTexture);
+                RecordSnapshotTexture(_surfaceMaterial, RestPositionTextureId, _restPositionTexture);
+                _surfaceMaterial.SetTexture(DensityPressureTextureId, _densityPressure);
+                RecordSnapshotTexture(_surfaceMaterial, DensityPressureTextureId, _densityPressure);
                 Graphics.Blit(Texture2D.blackTexture, _siteSurface, _simulationMaterial, 4);
                 _simulationMaterial.SetTexture(SiteSurfaceTextureId, _siteSurface);
+                RecordSnapshotTexture(_simulationMaterial, SiteSurfaceTextureId, _siteSurface);
             }
 
             object? stereoMode;
@@ -503,15 +575,15 @@ namespace ChromaGLS.Settings
                 FerrofluidSpikeSpringDamping = live.FerrofluidSpikeSpringDamping,
 
                 FerrofluidReflectivity = live.FerrofluidReflectivity,
-                FerrofluidMatteSheen = live.FerrofluidMatteSheen,
-                FerrofluidMatteAngle = live.FerrofluidMatteAngle,
-                FerrofluidReflectionAngle = live.FerrofluidReflectionAngle,
-                FerrofluidMatteRotationX = live.FerrofluidMatteRotationX,
-                FerrofluidMatteRotationY = live.FerrofluidMatteRotationY,
-                FerrofluidMatteRotationZ = live.FerrofluidMatteRotationZ,
-                FerrofluidReflectionRotationX = live.FerrofluidReflectionRotationX,
-                FerrofluidReflectionRotationY = live.FerrofluidReflectionRotationY,
-                FerrofluidReflectionRotationZ = live.FerrofluidReflectionRotationZ,
+                FerrofluidBaseRed = live.FerrofluidBaseRed,
+                FerrofluidBaseGreen = live.FerrofluidBaseGreen,
+                FerrofluidBaseBlue = live.FerrofluidBaseBlue,
+                FerrofluidRoomReflectionStrength = live.FerrofluidRoomReflectionStrength,
+                FerrofluidFeetReflectionStrength = live.FerrofluidFeetReflectionStrength,
+                FerrofluidParabolaReflectionStrength = live.FerrofluidParabolaReflectionStrength,
+                FerrofluidParabolaReflectionSaturation = live.FerrofluidParabolaReflectionSaturation,
+                FerrofluidThinFilmStrength = live.FerrofluidThinFilmStrength,
+                FerrofluidThinFilmAngleRate = live.FerrofluidThinFilmAngleRate,
                 FerrofluidEmissionStrength = 0f,
                 FerrofluidExposure = 1f,
                 FerrofluidLutScale = 3f,
@@ -555,13 +627,13 @@ namespace ChromaGLS.Settings
         internal static Vector2 EvaluateSpikeShape(float baseSize, float heightScale)
         {
             return new Vector2(
-                16.25f / Mathf.Clamp(baseSize, 0.5f, 3f),
+                16.25f / Mathf.Clamp(baseSize, 0.5f, 8f),
                 SourceFluidHeightScale * Mathf.Clamp(heightScale, 0.25f, 4f));
         }
 
         internal static float EvaluateSpikeBaseCutoff(float cutoff)
         {
-            return Mathf.Clamp(cutoff, 0f, 0.1f);
+            return Mathf.Clamp(cutoff, 0f, 0.3f);
         }
 
         internal static Vector2 EvaluateRestFieldPosition(
@@ -593,14 +665,7 @@ namespace ChromaGLS.Settings
 
         internal static Vector3 EvaluateFibonacciDirection(int index, int count)
         {
-            float goldenAngle = Mathf.PI * (3f - Mathf.Sqrt(5f));
-            float y = 1f - (2f * (index + 0.5f) / count);
-            float ringRadius = Mathf.Sqrt(Mathf.Max(0f, 1f - (y * y)));
-            float theta = index * goldenAngle;
-            return new Vector3(
-                ringRadius * Mathf.Cos(theta),
-                y,
-                ringRadius * Mathf.Sin(theta));
+            return FerrofluidPrimitiveLayout.EvaluateFibonacciDirection(index, count);
         }
 
         internal static Vector2 EvaluateFibonacciFieldPosition(int index, int count)
@@ -609,320 +674,36 @@ namespace ChromaGLS.Settings
             return (uv * 2f) - Vector2.one;
         }
 
-        // Use a Fibonacci spiral for even sphere coverage and staggered face grids for the cube.
-        // A uniform direction seed leaves gaps near rounded cube corners.
+        // CPU callers use the canonical chart; the runtime encodes settled homes for its active chart.
         internal static Vector2[] EvaluatePrimitiveRestPositions(
             FerrofluidSurfaceShape shape,
             int count,
             float roundness)
         {
-            long cacheKey = ((long)(int)shape << 40)
-                | ((long)count << 12)
-                | (long)Mathf.Clamp(Mathf.RoundToInt(roundness * 4096f), 0, 4095);
-            if (RestPositionCache.TryGetValue(cacheKey, out Vector2[]? cached) && cached.Length == count)
-            {
-                return cached;
-            }
-
-            Vector3[] directions = shape == FerrofluidSurfaceShape.Sphere
-                ? EvaluateFibonacciSeed(count)
-                : EvaluateCubeFaceSeed(count);
-
-            Vector3[] positions = new Vector3[count];
-            Vector3[] normals = new Vector3[count];
-            int[] nearestIndices = new int[count * PrimitiveRelaxationNeighbors];
-            float[] nearestDistances = new float[count * PrimitiveRelaxationNeighbors];
-
-            // Search a spatial grid instead of scanning every site for each neighbor.
-            float expectedSpacing = Mathf.Sqrt(12.6f / count);
-            float cellSize = Mathf.Max(expectedSpacing * 2.5f, 0.0001f);
-            int gridAxis = Mathf.Clamp(Mathf.CeilToInt(3.4f / cellSize), 4, 64);
-            int cellCount = gridAxis * gridAxis * gridAxis;
-            int[] cellStart = new int[cellCount + 1];
-            int[] cellCursor = new int[cellCount];
-            int[] siteCells = new int[count];
-            int[] cellEntries = new int[count];
-            int settledIterations = 0;
-            for (int iteration = 0; iteration < PrimitiveRelaxationIterations; iteration++)
-            {
-                // Reduce the step as relaxation progresses so the lattice settles instead of oscillating.
-                float anneal = Mathf.Lerp(1f, 0.15f, iteration / (float)PrimitiveRelaxationIterations);
-                for (int index = 0; index < count; index++)
-                {
-                    FerrofluidEnvironmentObjects.EvaluateSurfacePositionAndNormal(
-                        shape,
-                        directions[index],
-                        roundness,
-                        out positions[index],
-                        out normals[index]);
-                }
-
-                Array.Clear(cellStart, 0, cellStart.Length);
-                for (int index = 0; index < count; index++)
-                {
-                    int cell = EvaluateRelaxationCell(positions[index], cellSize, gridAxis);
-                    siteCells[index] = cell;
-                    cellStart[cell + 1]++;
-                }
-
-                for (int cell = 0; cell < cellCount; cell++)
-                {
-                    cellStart[cell + 1] += cellStart[cell];
-                }
-
-                Array.Copy(cellStart, cellCursor, cellCount);
-                for (int index = 0; index < count; index++)
-                {
-                    cellEntries[cellCursor[siteCells[index]]++] = index;
-                }
-
-                for (int index = 0; index < count; index++)
-                {
-                    int baseOffset = index * PrimitiveRelaxationNeighbors;
-                    for (int slot = 0; slot < PrimitiveRelaxationNeighbors; slot++)
-                    {
-                        nearestDistances[baseOffset + slot] = float.MaxValue;
-                    }
-
-                    int centerCell = siteCells[index];
-                    int centerX = centerCell % gridAxis;
-                    int centerY = (centerCell / gridAxis) % gridAxis;
-                    int centerZ = centerCell / (gridAxis * gridAxis);
-                    for (int shell = 0; shell < gridAxis; shell++)
-                    {
-                        int minX = Mathf.Max(0, centerX - shell);
-                        int maxX = Mathf.Min(gridAxis - 1, centerX + shell);
-                        int minY = Mathf.Max(0, centerY - shell);
-                        int maxY = Mathf.Min(gridAxis - 1, centerY + shell);
-                        int minZ = Mathf.Max(0, centerZ - shell);
-                        int maxZ = Mathf.Min(gridAxis - 1, centerZ + shell);
-                        for (int cellZ = minZ; cellZ <= maxZ; cellZ++)
-                        {
-                            for (int cellY = minY; cellY <= maxY; cellY++)
-                            {
-                                for (int cellX = minX; cellX <= maxX; cellX++)
-                                {
-                                    int ring = Mathf.Max(
-                                        Mathf.Max(Mathf.Abs(cellX - centerX), Mathf.Abs(cellY - centerY)),
-                                        Mathf.Abs(cellZ - centerZ));
-                                    if (ring != shell)
-                                    {
-                                        continue;
-                                    }
-
-                                    int cell = (((cellZ * gridAxis) + cellY) * gridAxis) + cellX;
-                                    for (int entry = cellStart[cell]; entry < cellStart[cell + 1]; entry++)
-                                    {
-                                        int other = cellEntries[entry];
-                                        if (other == index)
-                                        {
-                                            continue;
-                                        }
-
-                                        float distanceSquared = (positions[other] - positions[index]).sqrMagnitude;
-                                        for (int slot = 0; slot < PrimitiveRelaxationNeighbors; slot++)
-                                        {
-                                            if (distanceSquared >= nearestDistances[baseOffset + slot])
-                                            {
-                                                continue;
-                                            }
-
-                                            for (int shift = PrimitiveRelaxationNeighbors - 1; shift > slot; shift--)
-                                            {
-                                                nearestDistances[baseOffset + shift] = nearestDistances[baseOffset + shift - 1];
-                                                nearestIndices[baseOffset + shift] = nearestIndices[baseOffset + shift - 1];
-                                            }
-
-                                            nearestDistances[baseOffset + slot] = distanceSquared;
-                                            nearestIndices[baseOffset + slot] = other;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Stop when all eight neighbors are closer than the nearest possible site in the next shell.
-                        float eighthDistance = nearestDistances[baseOffset + PrimitiveRelaxationNeighbors - 1];
-                        if (eighthDistance != float.MaxValue
-                            && (shell * cellSize * shell * cellSize) >= eighthDistance)
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                float maxStep = 0f;
-                for (int index = 0; index < count; index++)
-                {
-                    int baseOffset = index * PrimitiveRelaxationNeighbors;
-                    float localSpacingSum = 0f;
-                    for (int slot = 0; slot < PrimitiveRelaxationNeighbors; slot++)
-                    {
-                        localSpacingSum += Mathf.Sqrt(nearestDistances[baseOffset + slot]);
-                    }
-
-                    // Use repulsion only. Attraction can squeeze close pairs together or move them past neighboring sites.
-                    float localMean = localSpacingSum / PrimitiveRelaxationNeighbors;
-                    Vector3 displacement = Vector3.zero;
-                    for (int slot = 0; slot < PrimitiveRelaxationNeighbors; slot++)
-                    {
-                        float distance = Mathf.Sqrt(nearestDistances[baseOffset + slot]);
-                        Vector3 away;
-                        if (distance < 0.000001f)
-                        {
-                            // Rounded cube edges can put distinct directions at nearly the same position.
-                            // Use their direction difference to separate them when the position difference vanishes.
-                            Vector3 directionDelta = directions[index] - directions[nearestIndices[baseOffset + slot]];
-                            away = directionDelta.sqrMagnitude > 0.000001f ? directionDelta.normalized : Vector3.up;
-                            distance = 0f;
-                        }
-                        else
-                        {
-                            away = (positions[index] - positions[nearestIndices[baseOffset + slot]]) / distance;
-                        }
-
-                        displacement += away * Mathf.Clamp01((localMean - distance) / localMean);
-                    }
-
-                    displacement /= PrimitiveRelaxationNeighbors;
-
-                    // Move along the surface tangent, then project back. Direction-only steps cannot separate overlapping cube-edge sites.
-                    Vector3 normal = normals[index];
-                    Vector3 tangent = displacement - (normal * Vector3.Dot(displacement, normal));
-                    float step = PrimitiveRelaxationStep * anneal * localMean;
-                    maxStep = Mathf.Max(maxStep, tangent.magnitude * step);
-                    directions[index] = (positions[index] + (tangent * step)).normalized;
-                }
-
-                if (maxStep < 0.0008f)
-                {
-                    settledIterations++;
-                    if (settledIterations >= 4)
-                    {
-                        break;
-                    }
-                }
-                else
-                {
-                    settledIterations = 0;
-                }
-            }
-
-            Vector2[] restPositions = new Vector2[count];
-            for (int index = 0; index < count; index++)
-            {
-                Vector2 uv = FerrofluidEnvironmentObjects.EvaluateSurfaceUv(directions[index], 0f);
-                restPositions[index] = (uv * 2f) - Vector2.one;
-            }
-
-            if (RestPositionCache.Count >= 24)
-            {
-                RestPositionCache.Clear();
-            }
-
-            RestPositionCache[cacheKey] = restPositions;
+            Vector3[] positions = FerrofluidPrimitiveLayout.Get(shape, count, roundness).Positions;
+            Vector2[] restPositions = EncodePrimitivePositions(positions, 0f);
             return restPositions;
         }
 
-        private static int EvaluateRelaxationCell(Vector3 position, float cellSize, int gridAxis)
+        private static Vector2[] EncodePrimitivePositions(Vector3[] positions, float chartYawDegrees)
         {
-            int x = Mathf.Clamp(Mathf.FloorToInt((position.x + 1.7f) / cellSize), 0, gridAxis - 1);
-            int y = Mathf.Clamp(Mathf.FloorToInt((position.y + 1.7f) / cellSize), 0, gridAxis - 1);
-            int z = Mathf.Clamp(Mathf.FloorToInt((position.z + 1.7f) / cellSize), 0, gridAxis - 1);
-            return (((z * gridAxis) + y) * gridAxis) + x;
+            Vector2[] encoded = new Vector2[positions.Length];
+            for (int index = 0; index < positions.Length; index++)
+            {
+                Vector2 uv = FerrofluidEnvironmentObjects.EvaluateSurfaceUv(positions[index], chartYawDegrees);
+                encoded[index] = (uv * 2f) - Vector2.one;
+            }
+
+            return encoded;
         }
 
-        private static Vector3[] EvaluateFibonacciSeed(int count)
+        // Keep the primitive under-layer shallow so magnetic growth remains visible in spikes.
+        // The torus retains its configured bulge height.
+        internal static float EvaluateBulgeHeight(FerrofluidSurfaceShape shape, float configuredHeight, float sourceWorldScale)
         {
-            Vector3[] directions = new Vector3[count];
-            for (int index = 0; index < count; index++)
-            {
-                directions[index] = EvaluateFibonacciDirection(index, count);
-            }
-
-            return directions;
-        }
-
-        // Seed each face's negative edges and let adjacent faces supply the positive edges to avoid duplicates and gaps.
-        // Deduplicate shared corners before reducing the seed to the requested particle count.
-        private static Vector3[] EvaluateCubeFaceSeed(int count)
-        {
-            int perFace = (count + 5) / 6;
-            int axis = (int)Mathf.Ceil(Mathf.Sqrt(perFace));
-            int candidateTotal = (axis * axis * 6) + 8;
-            Vector3[] candidates = new Vector3[candidateTotal];
-            int slot = 0;
-            for (int face = 0; face < 6; face++)
-            {
-                for (int row = 0; row < axis; row++)
-                {
-                    for (int column = 0; column < axis; column++)
-                    {
-                        float u = -1f + (((column + ((row % 2) * 0.5f)) / axis) * 2f);
-                        float v = -1f + ((row / (float)axis) * 2f);
-                        candidates[slot++] = face switch
-                        {
-                            0 => new Vector3(u, v, 1f),
-                            1 => new Vector3(u, v, -1f),
-                            2 => new Vector3(1f, u, v),
-                            3 => new Vector3(-1f, u, v),
-                            4 => new Vector3(u, 1f, v),
-                            _ => new Vector3(u, -1f, v),
-                        };
-                    }
-                }
-            }
-
-            for (int x = -1; x <= 1; x += 2)
-            {
-                for (int y = -1; y <= 1; y += 2)
-                {
-                    for (int z = -1; z <= 1; z += 2)
-                    {
-                        candidates[slot++] = new Vector3(x, y, z);
-                    }
-                }
-            }
-
-            Vector3[] kept = new Vector3[candidateTotal];
-            int keptCount = 0;
-            for (int candidate = 0; candidate < candidateTotal; candidate++)
-            {
-                Vector3 direction = candidates[candidate].normalized;
-                bool duplicate = false;
-                for (int existing = 0; existing < keptCount; existing++)
-                {
-                    if ((kept[existing] - direction).sqrMagnitude < 0.000001f)
-                    {
-                        duplicate = true;
-                        break;
-                    }
-                }
-
-                if (!duplicate)
-                {
-                    kept[keptCount++] = direction;
-                }
-            }
-
-            Vector3[] directions = new Vector3[count];
-            int emitted = 0;
-            for (int index = 0; index < keptCount && emitted < count; index++)
-            {
-                if ((int)((long)(index + 1) * count / keptCount) > emitted)
-                {
-                    directions[emitted++] = kept[index];
-                }
-            }
-
-            while (emitted < count)
-            {
-                directions[emitted] = EvaluateFibonacciDirection(emitted, count);
-                emitted++;
-            }
-
-            return directions;
+            return Mathf.Clamp(configuredHeight, 0f, 0.2f)
+                * sourceWorldScale
+                * (shape == FerrofluidSurfaceShape.Torus ? 1f : 0.5f);
         }
 
         internal static float EvaluatePrimitiveCellMetric(float spikeSize)
@@ -935,37 +716,53 @@ namespace ChromaGLS.Settings
             _config = config;
             Vector2 spikeShape = EvaluateSpikeShape(config.FerrofluidSpikeBaseSize, config.FerrofluidSpikeHeightScale);
             _simulationMaterial.SetFloat("_SpikeFactor", spikeShape.x);
+            RecordSnapshotFloat(_simulationMaterial, "_SpikeFactor", spikeShape.x);
             _simulationMaterial.SetFloat("_SpikeBaseCutoff", EvaluateSpikeBaseCutoff(config.FerrofluidSpikeBaseCutoff));
+            RecordSnapshotFloat(_simulationMaterial, "_SpikeBaseCutoff", EvaluateSpikeBaseCutoff(config.FerrofluidSpikeBaseCutoff));
             _spikeHeightScale = spikeShape.y / SourceFluidHeightScale;
+            _shadowDeformationPerScale = EvaluateShadowDeformationPerScale(config);
 
             Vector2Int densityLattice = EvaluateDensityLattice(
                 config.FerrofluidSpikeDensity,
                 _shape,
                 EvaluateShapeDensityScale(_shape, config));
             _simulationMaterial.SetFloat(PrimitiveSpikeSizeId, Mathf.Clamp(config.FerrofluidPrimitiveSpikeSize, 0.3f, 2f));
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveSpikeSizeId, Mathf.Clamp(config.FerrofluidPrimitiveSpikeSize, 0.3f, 2f));
 
             _simulationMaterial.SetFloat(PrimitiveTipRoundnessId, Mathf.Clamp(config.FerrofluidPrimitiveTipRoundness, 0f, 1f));
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveTipRoundnessId, Mathf.Clamp(config.FerrofluidPrimitiveTipRoundness, 0f, 1f));
             _simulationMaterial.SetFloat(PrimitiveTipCapRoundingId, Mathf.Clamp01(config.FerrofluidPrimitiveTipCapRounding));
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveTipCapRoundingId, Mathf.Clamp01(config.FerrofluidPrimitiveTipCapRounding));
             _surfaceMaterial.SetFloat(SpikeMoundCurvatureId, Mathf.Clamp(config.FerrofluidSpikeMoundCurvature, 1f, 4f));
-            _surfaceMaterial.SetFloat(PrimitiveAmbientScaleId, Mathf.Clamp(config.FerrofluidPrimitiveAmbientScale, 0f, 5f));
+            RecordSnapshotFloat(_surfaceMaterial, SpikeMoundCurvatureId, Mathf.Clamp(config.FerrofluidSpikeMoundCurvature, 1f, 4f));
             _surfaceMaterial.SetFloat(PrimitiveFlattenRadiusId, Mathf.Clamp(config.FerrofluidPrimitiveFlattenRadius, 0.05f, 2f));
+            RecordSnapshotFloat(_surfaceMaterial, PrimitiveFlattenRadiusId, Mathf.Clamp(config.FerrofluidPrimitiveFlattenRadius, 0.05f, 2f));
 
             _surfaceMaterial.SetFloat(PrimitiveFlattenExponentId, Mathf.Clamp(config.FerrofluidPrimitiveFlattenExponent, 0.25f, 6f));
+            RecordSnapshotFloat(_surfaceMaterial, PrimitiveFlattenExponentId, Mathf.Clamp(config.FerrofluidPrimitiveFlattenExponent, 0.25f, 6f));
             _surfaceMaterial.SetFloat(PrimitiveGlobalFlattenId, Mathf.Clamp01(config.FerrofluidPrimitiveGlobalFlatten));
+            RecordSnapshotFloat(_surfaceMaterial, PrimitiveGlobalFlattenId, Mathf.Clamp01(config.FerrofluidPrimitiveGlobalFlatten));
             _surfaceMaterial.SetFloat(SphereBulgeScaleId, Mathf.Clamp(config.FerrofluidSphereBulgeScale, 0f, 1.5f));
+            RecordSnapshotFloat(_surfaceMaterial, SphereBulgeScaleId, Mathf.Clamp(config.FerrofluidSphereBulgeScale, 0f, 1.5f));
             float surfaceRoundness = _shape == FerrofluidSurfaceShape.RoundedCube
                 ? Mathf.Clamp01(config.FerrofluidCubeRoundness)
                 : 0.15f;
             _surfaceMaterial.SetFloat(SurfaceRoundnessId, surfaceRoundness);
+            RecordSnapshotFloat(_surfaceMaterial, SurfaceRoundnessId, surfaceRoundness);
             _simulationMaterial.SetFloat(SurfaceRoundnessId, surfaceRoundness);
+            RecordSnapshotFloat(_simulationMaterial, SurfaceRoundnessId, surfaceRoundness);
 
             float chartYawDegrees = FerrofluidEnvironmentObjects.EvaluateChartYawDegrees(_shape, config);
             float chartYawRadians = chartYawDegrees * Mathf.Deg2Rad;
             Vector2 primitiveYawCosSin = new(Mathf.Cos(chartYawRadians), Mathf.Sin(chartYawRadians));
             _simulationMaterial.SetVector(PrimitiveYawCosSinId, primitiveYawCosSin);
+            RecordSnapshotVector(_simulationMaterial, PrimitiveYawCosSinId, primitiveYawCosSin);
             _surfaceMaterial.SetVector(PrimitiveYawCosSinId, primitiveYawCosSin);
+            RecordSnapshotVector(_surfaceMaterial, PrimitiveYawCosSinId, primitiveYawCosSin);
             _simulationMaterial.SetFloat(PrimitiveCellMetricId, EvaluatePrimitiveCellMetric(config.FerrofluidPrimitiveSpikeSize));
-            if (densityLattice.x != _fieldColumns || densityLattice.y != _fieldRows)
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveCellMetricId, EvaluatePrimitiveCellMetric(config.FerrofluidPrimitiveSpikeSize));
+            if (_shape == FerrofluidSurfaceShape.Torus
+                && (densityLattice.x != _fieldColumns || densityLattice.y != _fieldRows))
             {
                 // Replace particle state and rest positions together before the next tick when density changes.
                 ResetParticleField(densityLattice.x, densityLattice.y, surfaceRoundness);
@@ -974,63 +771,91 @@ namespace ChromaGLS.Settings
             float kernelRadius = 1f;
             float kernelRadiusSquared = kernelRadius * kernelRadius;
             _simulationMaterial.SetFloat("_H", kernelRadius);
+            RecordSnapshotFloat(_simulationMaterial, "_H", kernelRadius);
             _simulationMaterial.SetFloat("_HSQ", kernelRadiusSquared);
+            RecordSnapshotFloat(_simulationMaterial, "_HSQ", kernelRadiusSquared);
             _simulationMaterial.SetFloat("_Mass", Mathf.Clamp(config.ParticleMass, 0.01f, 5f));
+            RecordSnapshotFloat(_simulationMaterial, "_Mass", Mathf.Clamp(config.ParticleMass, 0.01f, 5f));
             _simulationMaterial.SetFloat("_RestDensity", Mathf.Clamp(config.RestDensity, 0.1f, 5f));
+            RecordSnapshotFloat(_simulationMaterial, "_RestDensity", Mathf.Clamp(config.RestDensity, 0.1f, 5f));
             _simulationMaterial.SetFloat("_GasConstant", Mathf.Clamp(config.GasConstant, 10f, 500f));
+            RecordSnapshotFloat(_simulationMaterial, "_GasConstant", Mathf.Clamp(config.GasConstant, 10f, 500f));
             _simulationMaterial.SetFloat("_Viscosity", Mathf.Clamp(config.Viscosity, 1f, 20f));
+            RecordSnapshotFloat(_simulationMaterial, "_Viscosity", Mathf.Clamp(config.Viscosity, 1f, 20f));
             _simulationMaterial.SetFloat("_Poly6", 315f / (64f * Mathf.PI * Mathf.Pow(kernelRadius, 9f)));
+            RecordSnapshotFloat(_simulationMaterial, "_Poly6", 315f / (64f * Mathf.PI * Mathf.Pow(kernelRadius, 9f)));
             _simulationMaterial.SetFloat("_SpikyGradient", -45f / (Mathf.PI * Mathf.Pow(kernelRadius, 6f)));
+            RecordSnapshotFloat(_simulationMaterial, "_SpikyGradient", -45f / (Mathf.PI * Mathf.Pow(kernelRadius, 6f)));
             _simulationMaterial.SetFloat("_ViscosityLaplacian", 45f / (Mathf.PI * Mathf.Pow(kernelRadius, 5f)));
+            RecordSnapshotFloat(_simulationMaterial, "_ViscosityLaplacian", 45f / (Mathf.PI * Mathf.Pow(kernelRadius, 5f)));
             _simulationMaterial.SetFloat("_PointerRadius", Mathf.Clamp(config.MagnetRadius, 0.1f, 8f));
+            RecordSnapshotFloat(_simulationMaterial, "_PointerRadius", Mathf.Clamp(config.MagnetRadius, 0.1f, 8f));
             _simulationMaterial.SetFloat("_MaximumSlide", Mathf.Clamp(config.MagnetMaximumSlide, 0.1f, 8f));
+            RecordSnapshotFloat(_simulationMaterial, "_MaximumSlide", Mathf.Clamp(config.MagnetMaximumSlide, 0.1f, 8f));
             _simulationMaterial.SetFloat("_SlideFraction", Mathf.Clamp01(config.MagnetSlideFraction));
+            RecordSnapshotFloat(_simulationMaterial, "_SlideFraction", Mathf.Clamp01(config.MagnetSlideFraction));
             _simulationMaterial.SetFloat("_SlideFalloffExponent", Mathf.Clamp(config.MagnetSlideFalloffExponent, 0.25f, 6f));
+            RecordSnapshotFloat(_simulationMaterial, "_SlideFalloffExponent", Mathf.Clamp(config.MagnetSlideFalloffExponent, 0.25f, 6f));
 
             _simulationMaterial.SetFloat("_Elasticity", Mathf.Clamp(config.MagnetElasticity, 4f, 160f));
+            RecordSnapshotFloat(_simulationMaterial, "_Elasticity", Mathf.Clamp(config.MagnetElasticity, 4f, 160f));
             _simulationMaterial.SetFloat("_Damping", Mathf.Clamp(config.MagnetDamping, 2f, 30f));
+            RecordSnapshotFloat(_simulationMaterial, "_Damping", Mathf.Clamp(config.MagnetDamping, 2f, 30f));
+            _simulationMaterial.SetFloat(PrimitiveHomeElasticityGainId, Mathf.Clamp(config.FerrofluidHomeElasticityGain, 0f, 2f));
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveHomeElasticityGainId, Mathf.Clamp(config.FerrofluidHomeElasticityGain, 0f, 2f));
+            _simulationMaterial.SetFloat(PrimitiveHomeQuadraticGainId, Mathf.Pow(2f, Mathf.Clamp(config.FerrofluidHomeQuadraticPower, 0f, 16f)));
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveHomeQuadraticGainId, Mathf.Pow(2f, Mathf.Clamp(config.FerrofluidHomeQuadraticPower, 0f, 16f)));
+            _simulationMaterial.SetFloat(PrimitiveHomeSoftRangeId, Mathf.Clamp(config.FerrofluidHomeSoftRange, 0f, 0.9f));
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveHomeSoftRangeId, Mathf.Clamp(config.FerrofluidHomeSoftRange, 0f, 0.9f));
+            _simulationMaterial.SetFloat(PrimitiveHomeTravelLimitId, Mathf.Clamp(config.FerrofluidHomeTravelLimit, 0.05f, 0.5f));
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveHomeTravelLimitId, Mathf.Clamp(config.FerrofluidHomeTravelLimit, 0.05f, 0.5f));
+            _simulationMaterial.SetFloat(PrimitiveHomeDampingGainId, Mathf.Clamp(config.FerrofluidHomeDampingGain, 0f, 4f));
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveHomeDampingGainId, Mathf.Clamp(config.FerrofluidHomeDampingGain, 0f, 4f));
             _surfaceMaterial.SetFloat("_HeightFalloffExponent", Mathf.Clamp(config.HeightFalloffExponent, 0.25f, 8f));
+            RecordSnapshotFloat(_surfaceMaterial, "_HeightFalloffExponent", Mathf.Clamp(config.HeightFalloffExponent, 0.25f, 8f));
             _surfaceMaterial.SetFloat("_HeightGain", Mathf.Clamp(config.HeightGain, 0f, 4f));
+            RecordSnapshotFloat(_surfaceMaterial, "_HeightGain", Mathf.Clamp(config.HeightGain, 0f, 4f));
             _surfaceMaterial.SetFloat("_BackHeightLoss", Mathf.Clamp(config.BackHeightLoss, 0f, 4f));
+            RecordSnapshotFloat(_surfaceMaterial, "_BackHeightLoss", Mathf.Clamp(config.BackHeightLoss, 0f, 4f));
 
             _surfaceMaterial.SetFloat(BackHeightFalloffExponentId, Mathf.Clamp(config.BackHeightFalloffExponent, 0.05f, 8f));
+            RecordSnapshotFloat(_surfaceMaterial, BackHeightFalloffExponentId, Mathf.Clamp(config.BackHeightFalloffExponent, 0.05f, 8f));
 
             _surfaceMaterial.SetFloat(MagnetHeightStrengthCapId, Mathf.Clamp01(config.MagnetHeightStrengthCap));
+            RecordSnapshotFloat(_surfaceMaterial, MagnetHeightStrengthCapId, Mathf.Clamp01(config.MagnetHeightStrengthCap));
             _surfaceMaterial.SetFloat("_MaximumHeight", Mathf.Clamp(config.MaximumHeight, 0.2f, 3f));
+            RecordSnapshotFloat(_surfaceMaterial, "_MaximumHeight", Mathf.Clamp(config.MaximumHeight, 0.2f, 3f));
             _surfaceMaterial.SetFloat("_MaximumTiltRadians", Mathf.Clamp(config.MaximumTiltDegrees, 0f, 85f) * Mathf.Deg2Rad);
+            RecordSnapshotFloat(_surfaceMaterial, "_MaximumTiltRadians", Mathf.Clamp(config.MaximumTiltDegrees, 0f, 85f) * Mathf.Deg2Rad);
             _surfaceMaterial.SetFloat("_TiltPeakRadiusMultiplier", Mathf.Clamp(config.TiltPeakRadiusMultiplier, 0.1f, 1.5f));
+            RecordSnapshotFloat(_surfaceMaterial, "_TiltPeakRadiusMultiplier", Mathf.Clamp(config.TiltPeakRadiusMultiplier, 0.1f, 1.5f));
             _surfaceMaterial.SetFloat("_TiltReturnRadiusMultiplier", Mathf.Clamp(config.TiltReturnRadiusMultiplier, 0.2f, 3f));
+            RecordSnapshotFloat(_surfaceMaterial, "_TiltReturnRadiusMultiplier", Mathf.Clamp(config.TiltReturnRadiusMultiplier, 0.2f, 3f));
             _surfaceMaterial.SetFloat("_TiltRiseExponent", Mathf.Clamp(config.TiltRiseExponent, 0.25f, 6f));
+            RecordSnapshotFloat(_surfaceMaterial, "_TiltRiseExponent", Mathf.Clamp(config.TiltRiseExponent, 0.25f, 6f));
             _surfaceMaterial.SetFloat("_TiltReturnExponent", Mathf.Clamp(config.TiltReturnExponent, 0.25f, 6f));
+            RecordSnapshotFloat(_surfaceMaterial, "_TiltReturnExponent", Mathf.Clamp(config.TiltReturnExponent, 0.25f, 6f));
             _surfaceMaterial.SetFloat("_InnerCornerFan", Mathf.Clamp01(config.InnerCornerFan));
+            RecordSnapshotFloat(_surfaceMaterial, "_InnerCornerFan", Mathf.Clamp01(config.InnerCornerFan));
             _surfaceMaterial.SetFloat("_EmissionStrength", Mathf.Clamp(config.FerrofluidEmissionStrength, 0f, 0.2f));
+            RecordSnapshotFloat(_surfaceMaterial, "_EmissionStrength", Mathf.Clamp(config.FerrofluidEmissionStrength, 0f, 0.2f));
 
             _surfaceMaterial.SetFloat("_Exposure", Mathf.Clamp(config.FerrofluidExposure, 0f, 2f));
+            RecordSnapshotFloat(_surfaceMaterial, "_Exposure", Mathf.Clamp(config.FerrofluidExposure, 0f, 2f));
             _surfaceMaterial.SetFloat(ThinFilmScaleId, Mathf.Clamp(config.FerrofluidLutScale, 0f, 4f));
+            RecordSnapshotFloat(_surfaceMaterial, ThinFilmScaleId, Mathf.Clamp(config.FerrofluidLutScale, 0f, 4f));
             _surfaceMaterial.SetFloat(ThinFilmOffsetId, Mathf.Clamp(config.FerrofluidLutOffset, -1f, 1f));
+            RecordSnapshotFloat(_surfaceMaterial, ThinFilmOffsetId, Mathf.Clamp(config.FerrofluidLutOffset, -1f, 1f));
 
-            if (_shape == FerrofluidSurfaceShape.RoundedCube && _primitiveRestPositions != null)
-            {
-                Vector3[] sitePositions = new Vector3[_primitiveRestPositions.Length];
-                for (int index = 0; index < sitePositions.Length; index++)
-                {
-                    sitePositions[index] = FerrofluidEnvironmentObjects.EvaluateSiteSurfacePosition(
-                        _shape,
-                        _primitiveRestPositions[index],
-                        surfaceRoundness,
-                        chartYawDegrees);
-                }
+            if (_shape != FerrofluidSurfaceShape.Torus)
+                BakePrimitiveHomes(densityLattice, surfaceRoundness, chartYawDegrees);
 
-                _simulationMaterial.SetFloat(PrimitiveSpikeSpacingId, FerrofluidEnvironmentObjects.EvaluateCubeSpikeSpacing(sitePositions));
-            }
+            ApplyEnabledState(config);
+        }
 
-            if (_restSurface != null)
-            {
-                _simulationMaterial.SetTexture(RestPositionTextureId, _restPositionTexture);
-                Graphics.Blit(Texture2D.blackTexture, _restSurface, _simulationMaterial, 6);
-                _simulationMaterial.SetTexture(RestSurfaceTextureId, _restSurface);
-            }
-
+        internal void DisableSpikes(Config config)
+        {
+            _spikesAllowed = false;
             ApplyEnabledState(config);
         }
 
@@ -1038,24 +863,36 @@ namespace ChromaGLS.Settings
         internal void ApplyEnabledState(Config config)
         {
             _renderEnabled = _shape != FerrofluidSurfaceShape.Torus || ShouldRun(config.FerrofluidBodyEnabled);
-            _surfaceMaterial.SetFloat("_SpikesEnabled", config.FerrofluidSpikesEnabled ? 1f : 0f);
+            float spikesEnabled = _spikesAllowed && config.FerrofluidSpikesEnabled ? 1f : 0f;
+            _surfaceMaterial.SetFloat("_SpikesEnabled", spikesEnabled);
+            RecordSnapshotFloat(_surfaceMaterial, "_SpikesEnabled", spikesEnabled);
             _surfaceMaterial.SetFloat(SpikeSpringStrengthId, Mathf.Clamp(config.FerrofluidSpikeSpringStrength, 1f, 800f));
+            RecordSnapshotFloat(_surfaceMaterial, SpikeSpringStrengthId, Mathf.Clamp(config.FerrofluidSpikeSpringStrength, 1f, 800f));
             _surfaceMaterial.SetFloat(SpikeSpringDampingId, Mathf.Clamp(config.FerrofluidSpikeSpringDamping, 0f, 80f));
+            RecordSnapshotFloat(_surfaceMaterial, SpikeSpringDampingId, Mathf.Clamp(config.FerrofluidSpikeSpringDamping, 0f, 80f));
             _surfaceMaterial.SetFloat(ReflectivityId, Mathf.Clamp01(config.FerrofluidReflectivity));
+            RecordSnapshotFloat(_surfaceMaterial, ReflectivityId, Mathf.Clamp01(config.FerrofluidReflectivity));
+            Color baseColor = new Color(
+                Mathf.Clamp01(config.FerrofluidBaseRed),
+                Mathf.Clamp01(config.FerrofluidBaseGreen),
+                Mathf.Clamp01(config.FerrofluidBaseBlue),
+                1f).linear;
+            _surfaceMaterial.SetVector(BaseColorId, baseColor);
+            RecordSnapshotVector(_surfaceMaterial, BaseColorId, baseColor);
+            Vector4 strengths = new(
+                Mathf.Clamp(config.FerrofluidRoomReflectionStrength, 0f, 4f),
+                Mathf.Clamp(config.FerrofluidFeetReflectionStrength, 0f, 4f),
+                Mathf.Clamp(config.FerrofluidParabolaReflectionStrength, 0f, 8f),
+                Mathf.Clamp01(config.FerrofluidParabolaReflectionSaturation));
+            _surfaceMaterial.SetVector(ReflectionStrengthsId, strengths);
+            RecordSnapshotVector(_surfaceMaterial, ReflectionStrengthsId, strengths);
+            _surfaceMaterial.SetFloat(ThinFilmStrengthId, Mathf.Clamp01(config.FerrofluidThinFilmStrength));
+            RecordSnapshotFloat(_surfaceMaterial, ThinFilmStrengthId, Mathf.Clamp01(config.FerrofluidThinFilmStrength));
+            _surfaceMaterial.SetFloat(ThinFilmAngleRateId, Mathf.Clamp(config.FerrofluidThinFilmAngleRate, 0f, 4f));
+            RecordSnapshotFloat(_surfaceMaterial, ThinFilmAngleRateId, Mathf.Clamp(config.FerrofluidThinFilmAngleRate, 0f, 4f));
 
-            _surfaceMaterial.SetFloat(MatteSheenId, Mathf.Clamp01(config.FerrofluidMatteSheen));
-            _surfaceMaterial.SetFloat(MatteAngleId, Mathf.Clamp(config.FerrofluidMatteAngle, 0f, 90f));
-            _surfaceMaterial.SetFloat(ReflectionAngleId, Mathf.Clamp(config.FerrofluidReflectionAngle, 0f, 90f));
-
-            _surfaceMaterial.SetVector(MatteLightRotationId, new Vector3(
-                Mathf.Clamp(config.FerrofluidMatteRotationX, 0f, 360f),
-                Mathf.Clamp(config.FerrofluidMatteRotationY, 0f, 360f),
-                Mathf.Clamp(config.FerrofluidMatteRotationZ, 0f, 360f)));
-            _surfaceMaterial.SetVector(ReflectionRotationId, new Vector3(
-                Mathf.Clamp(config.FerrofluidReflectionRotationX, 0f, 360f),
-                Mathf.Clamp(config.FerrofluidReflectionRotationY, 0f, 360f),
-                Mathf.Clamp(config.FerrofluidReflectionRotationZ, 0f, 360f)));
             _renderer.enabled = _renderEnabled;
+            ConfigureSurfaceNormals(_shape != FerrofluidSurfaceShape.Torus && spikesEnabled > 0f);
         }
 
         internal void SetFadeAlpha(float fadeAlpha)
@@ -1067,6 +904,7 @@ namespace ChromaGLS.Settings
 
             _lastFadeAlpha = fadeAlpha;
             _surfaceMaterial.SetFloat(FadeAlphaId, fadeAlpha);
+            RecordSnapshotFloat(_surfaceMaterial, FadeAlphaId, fadeAlpha);
         }
 
         internal void UpdateFrame(
@@ -1088,7 +926,8 @@ namespace ChromaGLS.Settings
             float openingWeight,
             Vector3 handPosition,
             Vector2 handPointer,
-            float handStrength)
+            float handStrength,
+            float heightAmplification = 1f)
         {
             if (!_renderEnabled)
             {
@@ -1111,13 +950,23 @@ namespace ChromaGLS.Settings
             float focusedStrength = magneticFieldStrength * (1f - openingWeight);
             float openingStrength = magneticFieldStrength * openingWeight;
             _simulationMaterial.SetVector(PointerPositionId, pointerPosition);
+            RecordSnapshotVector(_simulationMaterial, PointerPositionId, pointerPosition);
             _simulationMaterial.SetFloat(PointerStrengthId, focusedStrength);
+            RecordSnapshotFloat(_simulationMaterial, PointerStrengthId, focusedStrength);
             _surfaceMaterial.SetVector(MagneticFieldPositionId, magneticFieldPosition);
+            RecordSnapshotVector(_surfaceMaterial, MagneticFieldPositionId, magneticFieldPosition);
             _surfaceMaterial.SetFloat(MagneticFieldStrengthId, focusedStrength);
+            RecordSnapshotFloat(_surfaceMaterial, MagneticFieldStrengthId, focusedStrength);
             _surfaceMaterial.SetVector(MagnetOpeningPositionId, openingPointerPosition);
+            RecordSnapshotVector(_surfaceMaterial, MagnetOpeningPositionId, openingPointerPosition);
             _surfaceMaterial.SetVector(MagnetOpeningNormalId, openingPlaneNormal);
+            RecordSnapshotVector(_surfaceMaterial, MagnetOpeningNormalId, openingPlaneNormal);
             _surfaceMaterial.SetVector(MagnetOpeningDirectionId, openingPointerDirection);
+            RecordSnapshotVector(_surfaceMaterial, MagnetOpeningDirectionId, openingPointerDirection);
             _surfaceMaterial.SetFloat(MagnetOpeningStrengthId, openingStrength);
+            RecordSnapshotFloat(_surfaceMaterial, MagnetOpeningStrengthId, openingStrength);
+            _surfaceMaterial.SetFloat(MagnetHeightAmplificationId, heightAmplification);
+            RecordSnapshotFloat(_surfaceMaterial, MagnetHeightAmplificationId, heightAmplification);
             ApplySecondaryMagnet(handPosition, handPointer, handStrength);
             AdvanceSimulation();
         }
@@ -1128,60 +977,154 @@ namespace ChromaGLS.Settings
             Vector3 pointerSurfacePosition,
             float magneticFieldStrength,
             Vector3 handPosition,
-            float handStrength)
+            float handStrength,
+            Vector3 bodyVelocity = default,
+            Vector3 bodyAngularVelocity = default,
+            float heightAmplification = 1f)
         {
             if (!_renderEnabled)
             {
                 return;
             }
 
+            SetPrimitiveMotion(bodyVelocity, bodyAngularVelocity);
+            _surfaceMaterial.SetFloat(MagnetHeightAmplificationId, heightAmplification);
+            RecordSnapshotFloat(_surfaceMaterial, MagnetHeightAmplificationId, heightAmplification);
             ApplyWorldScaleParameters(sourceWorldScale);
             _simulationMaterial.SetFloat(PointerStrengthId, magneticFieldStrength);
+            RecordSnapshotFloat(_simulationMaterial, PointerStrengthId, magneticFieldStrength);
             _surfaceMaterial.SetVector(MagneticFieldPositionId, magneticFieldPosition);
+            RecordSnapshotVector(_surfaceMaterial, MagneticFieldPositionId, magneticFieldPosition);
             _surfaceMaterial.SetFloat(MagneticFieldStrengthId, magneticFieldStrength);
+            RecordSnapshotFloat(_surfaceMaterial, MagneticFieldStrengthId, magneticFieldStrength);
             ApplySecondaryMagnet(handPosition, Vector2.zero, handStrength);
 
             _simulationMaterial.SetVector(PrimitiveMagnetPositionId, _renderer.transform.InverseTransformPoint(pointerSurfacePosition));
+            RecordSnapshotVector(_simulationMaterial, PrimitiveMagnetPositionId, _renderer.transform.InverseTransformPoint(pointerSurfacePosition));
             _simulationMaterial.SetVector(PrimitiveHandPositionId, _renderer.transform.InverseTransformPoint(handPosition));
+            RecordSnapshotVector(_simulationMaterial, PrimitiveHandPositionId, _renderer.transform.InverseTransformPoint(handPosition));
             _surfaceMaterial.SetVector(MagnetOpeningPositionId, magneticFieldPosition);
+            RecordSnapshotVector(_surfaceMaterial, MagnetOpeningPositionId, magneticFieldPosition);
             _surfaceMaterial.SetVector(MagnetOpeningNormalId, Vector3.up);
+            RecordSnapshotVector(_surfaceMaterial, MagnetOpeningNormalId, Vector3.up);
             _surfaceMaterial.SetVector(MagnetOpeningDirectionId, Vector3.zero);
+            RecordSnapshotVector(_surfaceMaterial, MagnetOpeningDirectionId, Vector3.zero);
             _surfaceMaterial.SetFloat(MagnetOpeningStrengthId, 0f);
+            RecordSnapshotFloat(_surfaceMaterial, MagnetOpeningStrengthId, 0f);
             AdvanceSimulation();
             RenderPrimitiveDeformation();
+            RenderSurfaceNormals();
         }
 
         private void ApplySecondaryMagnet(Vector3 position, Vector2 pointer, float strength)
         {
             _surfaceMaterial.SetVector(SecondaryMagneticFieldPositionId, position);
+            RecordSnapshotVector(_surfaceMaterial, SecondaryMagneticFieldPositionId, position);
             _surfaceMaterial.SetFloat(SecondaryMagneticFieldStrengthId, strength);
+            RecordSnapshotFloat(_surfaceMaterial, SecondaryMagneticFieldStrengthId, strength);
             _simulationMaterial.SetVector(SecondaryPointerPositionId, pointer);
+            RecordSnapshotVector(_simulationMaterial, SecondaryPointerPositionId, pointer);
             _simulationMaterial.SetFloat(SecondaryMagneticFieldStrengthId, strength);
+            RecordSnapshotFloat(_simulationMaterial, SecondaryMagneticFieldStrengthId, strength);
         }
 
         private void AdvanceSimulation()
         {
-            // The spring blit uses a fullscreen quad, so pass the ferrofluid renderer's world matrix explicitly.
-            _surfaceMaterial.SetMatrix(EffectObjectToWorldId, _renderer.transform.localToWorldMatrix);
-            _surfaceMaterial.SetTexture(HeightMapTextureId, _heightMap);
             float now = Time.unscaledTime;
             float elapsed = Mathf.Max(0f, now - _lastSimulationAt);
             _lastSimulationAt = now;
-            _simulationAccumulator = Mathf.Min(
-                _simulationAccumulator + elapsed,
-                SimulationInterval * MaximumSimulationTicksPerFrame);
-            while (_simulationAccumulator >= SimulationInterval)
-            {
-                _simulationAccumulator -= SimulationInterval;
+            AdvancePrimitiveSimulation(elapsed);
+        }
 
-                int stepCount = Mathf.Clamp(_config.SimulationSteps, 1, 7);
+        // Every substep uploads its own interpolated momentum slice immediately before Simulate so
+        // the impulse spreads across the measured elapsed time instead of one repeated uniform.
+        internal void AdvancePrimitiveSimulation(float elapsedSeconds)
+        {
+            // The spring blit uses a fullscreen quad, so pass the ferrofluid renderer's world matrix explicitly.
+            _surfaceMaterial.SetMatrix(EffectObjectToWorldId, _renderer.transform.localToWorldMatrix);
+            RecordSnapshotMatrix(_surfaceMaterial, EffectObjectToWorldId, _renderer.transform.localToWorldMatrix);
+            _surfaceMaterial.SetTexture(HeightMapTextureId, _heightMap);
+            RecordSnapshotTexture(_surfaceMaterial, HeightMapTextureId, _heightMap);
+            int stepCount = Mathf.Clamp(_config.SimulationSteps, 1, 7);
+            bool primitive = _shape != FerrofluidSurfaceShape.Torus;
+            (int tickCount, float tickSeconds, float remainder) = FerrofluidSimulationTiming.CalculateStepSchedule(
+                _simulationAccumulator,
+                elapsedSeconds,
+                stepCount,
+                primitive);
+            _simulationAccumulator = remainder;
+            int totalSteps = tickCount * stepCount;
+            if (totalSteps == 0)
+            {
+                return;
+            }
+
+            Transform rendererTransform = _renderer.transform;
+            Quaternion rotationNow = rendererTransform.rotation;
+            float uniformScale = rendererTransform.lossyScale.x;
+            int globalStep = 0;
+            for (int tick = 0; tick < tickCount; tick++)
+            {
                 for (int step = 0; step < stepCount; step++)
                 {
-                    Simulate(SimulationDeltaTimeMilliseconds);
+                    if (primitive)
+                    {
+                        Quaternion previous = Quaternion.Slerp(_previousPrimitiveRotation, rotationNow, (float)globalStep / totalSteps);
+                        Quaternion next = Quaternion.Slerp(_previousPrimitiveRotation, rotationNow, (globalStep + 1f) / totalSteps);
+                        Vector3 previousLinear = Vector3.Lerp(_previousPrimitiveLinearVelocity, _pendingPrimitiveLinearVelocity, (float)globalStep / totalSteps);
+                        Vector3 nextLinear = Vector3.Lerp(_previousPrimitiveLinearVelocity, _pendingPrimitiveLinearVelocity, (globalStep + 1f) / totalSteps);
+                        Vector3 previousAngular = Vector3.Lerp(_previousPrimitiveAngularVelocity, _pendingPrimitiveAngularVelocity, (float)globalStep / totalSteps);
+                        Vector3 nextAngular = Vector3.Lerp(_previousPrimitiveAngularVelocity, _pendingPrimitiveAngularVelocity, (globalStep + 1f) / totalSteps);
+                        Quaternion inversePrevious = Quaternion.Inverse(previous);
+                        Quaternion inverseNext = Quaternion.Inverse(next);
+                        _simulationMaterial.SetMatrix(PrimitiveFrameRotationId, Matrix4x4.Rotate(inverseNext * previous));
+                        RecordSnapshotMatrix(_simulationMaterial, PrimitiveFrameRotationId, Matrix4x4.Rotate(inverseNext * previous));
+                        _simulationMaterial.SetVector(
+                            PrimitiveLinearVelocityDeltaId,
+                            inverseNext * ((previousLinear - nextLinear) / uniformScale));
+                        RecordSnapshotVector(
+                            _simulationMaterial,
+                            PrimitiveLinearVelocityDeltaId,
+                            inverseNext * ((previousLinear - nextLinear) / uniformScale));
+                        _simulationMaterial.SetVector(PrimitivePreviousAngularVelocityId, inversePrevious * previousAngular);
+                        RecordSnapshotVector(_simulationMaterial, PrimitivePreviousAngularVelocityId, inversePrevious * previousAngular);
+                        _simulationMaterial.SetVector(PrimitiveAngularVelocityId, inverseNext * nextAngular);
+                        RecordSnapshotVector(_simulationMaterial, PrimitiveAngularVelocityId, inverseNext * nextAngular);
+                        Simulate(1000f * (tickSeconds / stepCount));
+                    }
+                    else
+                    {
+                        Simulate(SimulationDeltaTimeMilliseconds);
+                    }
+
+                    globalStep++;
                 }
 
-                RenderHeightMap(SimulationDeltaTimeMilliseconds);
+                RenderHeightMap(primitive ? 1000f * tickSeconds : SimulationDeltaTimeMilliseconds);
             }
+
+            if (primitive)
+            {
+                _previousPrimitiveRotation = rotationNow;
+                _previousPrimitiveLinearVelocity = _pendingPrimitiveLinearVelocity;
+                _previousPrimitiveAngularVelocity = _pendingPrimitiveAngularVelocity;
+            }
+        }
+
+        // The first sample only seeds the history so a fresh lattice or first body input does not
+        // fire a false impulse; every later sample is the pending endpoint for the next advance.
+        internal void SetPrimitiveMotion(Vector3 bodyVelocity, Vector3 bodyAngularVelocity)
+        {
+            if (!_primitiveHistoryValid)
+            {
+                _previousPrimitiveRotation = _renderer.transform.rotation;
+                _previousPrimitiveLinearVelocity = bodyVelocity;
+                _previousPrimitiveAngularVelocity = bodyAngularVelocity;
+                _primitiveHistoryValid = true;
+            }
+
+            _pendingPrimitiveLinearVelocity = bodyVelocity;
+            _pendingPrimitiveAngularVelocity = bodyAngularVelocity;
         }
 
         // Keep arc-length order identical to the shader so saber interaction stays continuous around corners.
@@ -1315,6 +1258,7 @@ namespace ChromaGLS.Settings
 
             UnityEngine.Object.Destroy(_restPositionTexture);
             UnityEngine.Object.Destroy(_simulationMaterial);
+            ReleaseSurfaceNormals();
             UnityEngine.Object.Destroy(_surfaceMaterial);
             UnityEngine.Object.Destroy(_surfaceMesh);
         }
@@ -1322,13 +1266,20 @@ namespace ChromaGLS.Settings
         private void ApplyStaticSimulationParameters()
         {
             _simulationMaterial.SetInt(ParticleCountId, _particleCount);
+            RecordSnapshotInt(_simulationMaterial, ParticleCountId, _particleCount);
 
             _surfaceMaterial.SetInt(ParticleCountId, _particleCount);
+            RecordSnapshotInt(_surfaceMaterial, ParticleCountId, _particleCount);
             _simulationMaterial.SetVector(DomainScaleId, EvaluateDomainScale(_shape, _fieldColumns));
+            RecordSnapshotVector(_simulationMaterial, DomainScaleId, EvaluateDomainScale(_shape, _fieldColumns));
             _simulationMaterial.SetFloat(HeightFactorId, HeightFactorValue);
+            RecordSnapshotFloat(_simulationMaterial, HeightFactorId, HeightFactorValue);
             _simulationMaterial.SetFloat("_HeightMapScale", HeightMapScaleFactor);
+            RecordSnapshotFloat(_simulationMaterial, "_HeightMapScale", HeightMapScaleFactor);
             _simulationMaterial.SetFloat("_SmoothFactor", HeightMapSmoothFactor);
+            RecordSnapshotFloat(_simulationMaterial, "_SmoothFactor", HeightMapSmoothFactor);
             _surfaceMaterial.SetFloat(HeightFactorId, HeightFactorValue);
+            RecordSnapshotFloat(_surfaceMaterial, HeightFactorId, HeightFactorValue);
         }
 
         private void ApplyGeometry(
@@ -1349,49 +1300,100 @@ namespace ChromaGLS.Settings
                 geometry.VerticalLength,
                 geometry.PerimeterLength);
             _simulationMaterial.SetVector(PerimeterSegmentsId, perimeterSegments);
+            RecordSnapshotVector(_simulationMaterial, PerimeterSegmentsId, perimeterSegments);
             _simulationMaterial.SetFloat(CornerRadiusId, geometry.CornerRadius);
+            RecordSnapshotFloat(_simulationMaterial, CornerRadiusId, geometry.CornerRadius);
             _simulationMaterial.SetFloat(RadialRadiusId, RadialRadius);
+            RecordSnapshotFloat(_simulationMaterial, RadialRadiusId, RadialRadius);
             _surfaceMaterial.SetVector(RectCenterId, rect.center);
+            RecordSnapshotVector(_surfaceMaterial, RectCenterId, rect.center);
             _surfaceMaterial.SetVector(RectSizeId, rect.size);
+            RecordSnapshotVector(_surfaceMaterial, RectSizeId, rect.size);
             _surfaceMaterial.SetFloat(RectMinYId, rect.yMin);
+            RecordSnapshotFloat(_surfaceMaterial, RectMinYId, rect.yMin);
             _surfaceMaterial.SetFloat(PivotYId, pivot.y);
+            RecordSnapshotFloat(_surfaceMaterial, PivotYId, pivot.y);
             _surfaceMaterial.SetFloat(SkewId, skew);
+            RecordSnapshotFloat(_surfaceMaterial, SkewId, skew);
             _surfaceMaterial.SetVector(HalfExtentsId, geometry.HalfExtents);
+            RecordSnapshotVector(_surfaceMaterial, HalfExtentsId, geometry.HalfExtents);
             _surfaceMaterial.SetFloat(CornerRadiusId, geometry.CornerRadius);
+            RecordSnapshotFloat(_surfaceMaterial, CornerRadiusId, geometry.CornerRadius);
             _surfaceMaterial.SetFloat(RadialRadiusId, RadialRadius);
+            RecordSnapshotFloat(_surfaceMaterial, RadialRadiusId, RadialRadius);
             _surfaceMaterial.SetFloat(DepthRadiusId, rect.width / 6f);
+            RecordSnapshotFloat(_surfaceMaterial, DepthRadiusId, rect.width / 6f);
             _surfaceMaterial.SetFloat(ViewerLocalZSignId, viewerLocalZSign);
+            RecordSnapshotFloat(_surfaceMaterial, ViewerLocalZSignId, viewerLocalZSign);
             _surfaceMaterial.SetFloat(RadialCenterId, RadialCenter);
+            RecordSnapshotFloat(_surfaceMaterial, RadialCenterId, RadialCenter);
             _surfaceMaterial.SetFloat(SourceLocalScaleId, RadialRadius / SourceRadialRadius);
+            RecordSnapshotFloat(_surfaceMaterial, SourceLocalScaleId, RadialRadius / SourceRadialRadius);
             _surfaceMaterial.SetMatrix(LocalToCurvedCanvasId, localToCurvedCanvas);
+            RecordSnapshotMatrix(_surfaceMaterial, LocalToCurvedCanvasId, localToCurvedCanvas);
             _surfaceMaterial.SetMatrix(CurvedCanvasToLocalId, curvedCanvasToLocal);
+            RecordSnapshotMatrix(_surfaceMaterial, CurvedCanvasToLocalId, curvedCanvasToLocal);
             _surfaceMaterial.SetFloat(CurvedCanvasRadiusId, curvedCanvasRadius);
+            RecordSnapshotFloat(_surfaceMaterial, CurvedCanvasRadiusId, curvedCanvasRadius);
             _surfaceMaterial.SetFloat(HasCurvedCanvasId, hasCurvedCanvas ? 1f : 0f);
+            RecordSnapshotFloat(_surfaceMaterial, HasCurvedCanvasId, hasCurvedCanvas ? 1f : 0f);
             ApplyWorldScaleParameters(sourceWorldScale);
         }
 
         private void ApplyWorldScaleParameters(float sourceWorldScale)
         {
+            _absSourceWorldScale = Mathf.Abs(sourceWorldScale);
             _surfaceMaterial.SetFloat("_BulgeRadius", Mathf.Clamp(_config.BulgeRadius, 0.1f, 3.2f) * sourceWorldScale);
+            RecordSnapshotFloat(_surfaceMaterial, "_BulgeRadius", Mathf.Clamp(_config.BulgeRadius, 0.1f, 3.2f) * sourceWorldScale);
             _surfaceMaterial.SetFloat(PrimitiveSpikeHeightRadiusId, Mathf.Clamp(_config.FerrofluidSpikeHeightRadius, 0.1f, 3.2f) * sourceWorldScale);
+            RecordSnapshotFloat(_surfaceMaterial, PrimitiveSpikeHeightRadiusId, Mathf.Clamp(_config.FerrofluidSpikeHeightRadius, 0.1f, 3.2f) * sourceWorldScale);
             _surfaceMaterial.SetFloat(PrimitiveSpikeTiltRadiusId, Mathf.Clamp(_config.FerrofluidSpikeTiltRadius, 0.1f, 3.2f) * sourceWorldScale);
+            RecordSnapshotFloat(_surfaceMaterial, PrimitiveSpikeTiltRadiusId, Mathf.Clamp(_config.FerrofluidSpikeTiltRadius, 0.1f, 3.2f) * sourceWorldScale);
             _surfaceMaterial.SetFloat(MagnetHeightDeadZoneRadiusId, Mathf.Clamp(_config.MagnetHeightDeadZoneRadius, 0f, 0.5f) * sourceWorldScale);
-            _surfaceMaterial.SetFloat("_BulgeHeight", Mathf.Clamp(_config.BulgeHeight, 0f, 0.2f) * sourceWorldScale);
+            RecordSnapshotFloat(_surfaceMaterial, MagnetHeightDeadZoneRadiusId, Mathf.Clamp(_config.MagnetHeightDeadZoneRadius, 0f, 0.5f) * sourceWorldScale);
+            float bulgeHeight = EvaluateBulgeHeight(_shape, _config.BulgeHeight, sourceWorldScale);
+            _surfaceMaterial.SetFloat("_BulgeHeight", bulgeHeight);
+            RecordSnapshotFloat(_surfaceMaterial, "_BulgeHeight", bulgeHeight);
 
             _surfaceMaterial.SetFloat("_PeakWidth", Mathf.Clamp(_config.PeakWidth, 0.03f, 1f) * sourceWorldScale);
+            RecordSnapshotFloat(_surfaceMaterial, "_PeakWidth", Mathf.Clamp(_config.PeakWidth, 0.03f, 1f) * sourceWorldScale);
             _surfaceMaterial.SetFloat("_FluidHeightScale", SourceFluidHeightScale * _spikeHeightScale * sourceWorldScale);
+            RecordSnapshotFloat(_surfaceMaterial, "_FluidHeightScale", SourceFluidHeightScale * _spikeHeightScale * sourceWorldScale);
         }
 
         private void Simulate(float deltaTimeMilliseconds)
         {
+            AdvanceParticles(deltaTimeMilliseconds, 2);
+        }
+
+        private void CalculateParticleForces()
+        {
             _simulationMaterial.SetTexture(StateTextureId, _currentState);
+            RecordSnapshotTexture(_simulationMaterial, StateTextureId, _currentState);
+            if (_siteSurface != null)
+            {
+                // Pressure needs the current physical positions, not the previous presentation frame.
+                Graphics.Blit(Texture2D.blackTexture, _siteSurface, _simulationMaterial, 4);
+                _simulationMaterial.SetTexture(SiteSurfaceTextureId, _siteSurface);
+                RecordSnapshotTexture(_simulationMaterial, SiteSurfaceTextureId, _siteSurface);
+            }
+
             Graphics.Blit(Texture2D.blackTexture, _densityPressure, _simulationMaterial, 0);
             _simulationMaterial.SetTexture(DensityPressureTextureId, _densityPressure);
+            RecordSnapshotTexture(_simulationMaterial, DensityPressureTextureId, _densityPressure);
             Graphics.Blit(Texture2D.blackTexture, _force, _simulationMaterial, 1);
+        }
+
+        private void AdvanceParticles(float deltaTimeMilliseconds, int integrationPass)
+        {
+            CalculateParticleForces();
             _simulationMaterial.SetTexture(RestPositionTextureId, _restPositionTexture);
+            RecordSnapshotTexture(_simulationMaterial, RestPositionTextureId, _restPositionTexture);
             _simulationMaterial.SetTexture(ForceTextureId, _force);
+            RecordSnapshotTexture(_simulationMaterial, ForceTextureId, _force);
             _simulationMaterial.SetFloat(DeltaTimeMillisecondsId, deltaTimeMilliseconds);
-            Graphics.Blit(Texture2D.blackTexture, _nextState, _simulationMaterial, 2);
+            RecordSnapshotFloat(_simulationMaterial, DeltaTimeMillisecondsId, deltaTimeMilliseconds);
+            Graphics.Blit(Texture2D.blackTexture, _nextState, _simulationMaterial, integrationPass);
             RenderTexture previous = _currentState;
             _currentState = _nextState;
             _nextState = previous;
@@ -1400,26 +1402,36 @@ namespace ChromaGLS.Settings
         private void RenderHeightMap(float deltaTimeMilliseconds)
         {
             _simulationMaterial.SetTexture(StateTextureId, _currentState);
+            RecordSnapshotTexture(_simulationMaterial, StateTextureId, _currentState);
 
             _surfaceMaterial.SetTexture(StateTextureId, _currentState);
+            RecordSnapshotTexture(_surfaceMaterial, StateTextureId, _currentState);
             _surfaceMaterial.SetTexture(SiteSurfaceTextureId, _siteSurface);
+            RecordSnapshotTexture(_surfaceMaterial, SiteSurfaceTextureId, _siteSurface);
             if (_siteSurface != null)
             {
                 // Only site positions move. Rest spacing was cached when the settings changed.
                 Graphics.Blit(Texture2D.blackTexture, _siteSurface, _simulationMaterial, 4);
                 _simulationMaterial.SetTexture(SiteSurfaceTextureId, _siteSurface);
+                RecordSnapshotTexture(_simulationMaterial, SiteSurfaceTextureId, _siteSurface);
             }
+
+            if (_shape != FerrofluidSurfaceShape.Torus)
+                Graphics.Blit(Texture2D.blackTexture, _siteBulge, _surfaceMaterial, 3);
 
             Graphics.Blit(Texture2D.blackTexture, _coarseCandidates, _simulationMaterial, 5);
             Graphics.Blit(Texture2D.blackTexture, _heightMap, _simulationMaterial, 3);
 
             _surfaceMaterial.SetFloat(DeltaTimeMillisecondsId, deltaTimeMilliseconds);
+            RecordSnapshotFloat(_surfaceMaterial, DeltaTimeMillisecondsId, deltaTimeMilliseconds);
             _surfaceMaterial.SetTexture(SpringStateTextureId, _springCurrent);
+            RecordSnapshotTexture(_surfaceMaterial, SpringStateTextureId, _springCurrent);
             Graphics.Blit(Texture2D.blackTexture, _springNext, _surfaceMaterial, 1);
             RenderTexture previousSpring = _springCurrent;
             _springCurrent = _springNext;
             _springNext = previousSpring;
             _surfaceMaterial.SetTexture(SpringStateTextureId, _springCurrent);
+            RecordSnapshotTexture(_surfaceMaterial, SpringStateTextureId, _springCurrent);
         }
 
         private void CreatePrimitiveDeformationTextures()
@@ -1427,14 +1439,17 @@ namespace ChromaGLS.Settings
             _siteDeformation = CreateRenderTexture("ChromaGLS Ferrofluid Site Deformation", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
             _siteBulge = CreateRenderTexture("ChromaGLS Ferrofluid Site Bulge", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
             _surfaceMaterial.SetTexture(SiteDeformationTextureId, _siteDeformation);
+            RecordSnapshotTexture(_surfaceMaterial, SiteDeformationTextureId, _siteDeformation);
             _surfaceMaterial.SetTexture(SiteBulgeTextureId, _siteBulge);
+            RecordSnapshotTexture(_surfaceMaterial, SiteBulgeTextureId, _siteBulge);
+            _simulationMaterial.SetTexture(SiteBulgeTextureId, _siteBulge);
+            RecordSnapshotTexture(_simulationMaterial, SiteBulgeTextureId, _siteBulge);
         }
 
         private void RenderPrimitiveDeformation()
         {
             // Magnet positions change between simulation ticks, so refresh the shared site responses every presentation frame.
             Graphics.Blit(Texture2D.blackTexture, _siteDeformation, _surfaceMaterial, 2);
-            Graphics.Blit(Texture2D.blackTexture, _siteBulge, _surfaceMaterial, 3);
         }
 
         private void ReleasePrimitiveDeformationTextures()
@@ -1458,7 +1473,173 @@ namespace ChromaGLS.Settings
             return new Vector2(height + (nextVelocity * deltaTimeSeconds), nextVelocity);
         }
 
-        // Density changes replace the lattice, so reset both particle buffers and enlarge them if needed.
+        private void BakePrimitiveHomes(Vector2Int lattice, float roundness, float chartYaw)
+        {
+            Vector4 pressure = new(
+                _simulationMaterial.GetFloat("_Mass"),
+                _simulationMaterial.GetFloat("_RestDensity"),
+                _simulationMaterial.GetFloat("_GasConstant"),
+                _simulationMaterial.GetFloat("_Viscosity"));
+            var key = (_shape, lattice.x * lattice.y, roundness, pressure, _simulationMaterial.GetFloat("_Damping"));
+            bool sameBake = _homeBakeKey.HasValue && _homeBakeKey.Value.Equals(key);
+            if (sameBake && _homeChartYaw == chartYaw)
+                return;
+
+            if (!sameBake)
+            {
+                _fieldColumns = lattice.x;
+                _fieldRows = lattice.y;
+                _particleCount = lattice.x * lattice.y;
+                _simulationMaterial.SetVector(DomainScaleId, EvaluateDomainScale(_shape, _fieldColumns));
+                RecordSnapshotVector(_simulationMaterial, DomainScaleId, EvaluateDomainScale(_shape, _fieldColumns));
+                EnsureParticleTextureCapacity();
+                _simulationMaterial.SetInt(ParticleCountId, _particleCount);
+                RecordSnapshotInt(_simulationMaterial, ParticleCountId, _particleCount);
+                _surfaceMaterial.SetInt(ParticleCountId, _particleCount);
+                RecordSnapshotInt(_surfaceMaterial, ParticleCountId, _particleCount);
+                if (!PrimitiveHomeCache.TryGetValue(key, out (Vector3[] Positions, float[] Densities) cached))
+                {
+                    FerrofluidPrimitiveLayout.Layout layout = FerrofluidPrimitiveLayout.Get(_shape, _particleCount, roundness);
+
+                    // Settle in one canonical chart, then encode the frozen physical result for the render chart.
+                    _simulationMaterial.SetVector(PrimitiveYawCosSinId, new Vector2(1f, 0f));
+                    RecordSnapshotVector(_simulationMaterial, PrimitiveYawCosSinId, new Vector2(1f, 0f));
+                    InstallPrimitivePositions(layout.Positions, 0f);
+                    RefreshRestSurface(layout.Positions);
+                    _simulationMaterial.SetInt("_PrimitiveBakePinnedCount", layout.PinnedCount);
+                    RecordSnapshotInt(_simulationMaterial, "_PrimitiveBakePinnedCount", layout.PinnedCount);
+                    for (int iteration = 0; iteration < 64; iteration++)
+                        AdvanceParticles(SimulationDeltaTimeMilliseconds, 7);
+
+                    Vector3[] homes = ReadSettledPrimitiveHomes(roundness);
+
+                    // Store the settled density with each immutable home so sparse and crowded regions use the same reference.
+                    _simulationMaterial.SetTexture(RestPositionTextureId, _currentState);
+                    RecordSnapshotTexture(_simulationMaterial, RestPositionTextureId, _currentState);
+                    RefreshRestSurface(homes);
+                    _simulationMaterial.SetTexture(RestPositionTextureId, _restPositionTexture);
+                    RecordSnapshotTexture(_simulationMaterial, RestPositionTextureId, _restPositionTexture);
+                    _simulationMaterial.SetTexture(StateTextureId, _currentState);
+                    RecordSnapshotTexture(_simulationMaterial, StateTextureId, _currentState);
+                    Graphics.Blit(Texture2D.blackTexture, _siteSurface, _simulationMaterial, 4);
+                    _simulationMaterial.SetTexture(SiteSurfaceTextureId, _siteSurface);
+                    RecordSnapshotTexture(_simulationMaterial, SiteSurfaceTextureId, _siteSurface);
+                    Graphics.Blit(Texture2D.blackTexture, _densityPressure, _simulationMaterial, 0);
+                    Color[] densityPixels = ReadParticlePixels(_densityPressure);
+                    float[] densities = new float[_particleCount];
+                    for (int index = 0; index < _particleCount; index++)
+                        densities[index] = densityPixels[index].r;
+
+                    cached = (homes, densities);
+                    if (PrimitiveHomeCache.Count >= 24)
+                        PrimitiveHomeCache.Clear();
+
+                    PrimitiveHomeCache.Add(key, cached);
+                }
+
+                _bakedPrimitiveHomes = cached.Positions;
+                _bakedPrimitiveDensities = cached.Densities;
+
+                _homeBakeKey = key;
+            }
+
+            float radians = chartYaw * Mathf.Deg2Rad;
+            _simulationMaterial.SetVector(PrimitiveYawCosSinId, new Vector2(Mathf.Cos(radians), Mathf.Sin(radians)));
+            RecordSnapshotVector(_simulationMaterial, PrimitiveYawCosSinId, new Vector2(Mathf.Cos(radians), Mathf.Sin(radians)));
+            InstallPrimitivePositions(_bakedPrimitiveHomes!, chartYaw, _bakedPrimitiveDensities);
+            RefreshRestSurface(_bakedPrimitiveHomes!);
+            _homeChartYaw = chartYaw;
+            _lastSimulationAt = Time.unscaledTime;
+            _simulationAccumulator = 0f;
+            _primitiveHistoryValid = false;
+        }
+
+        private void InstallPrimitivePositions(Vector3[] positions, float chartYaw, float[]? densities = null)
+        {
+            Texture2D previous = _restPositionTexture;
+            _primitiveRestPositions = EncodePrimitivePositions(positions, chartYaw);
+            _restPositionTexture = new Texture2D(_particleTextureSize, _particleTextureSize, TextureFormat.RGBAFloat, false, true)
+            {
+                name = "ChromaGLS Ferrofluid Baked Homes",
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Repeat,
+                hideFlags = HideFlags.DontSave,
+            };
+            Color[] pixels = new Color[_particleTextureSize * _particleTextureSize];
+            for (int index = 0; index < _primitiveRestPositions.Length; index++)
+            {
+                Vector2 position = _primitiveRestPositions[index];
+                float density = densities?[index] ?? 0f;
+                pixels[index] = new Color(position.x, position.y, density, 0f);
+            }
+
+            _restPositionTexture.SetPixels(pixels);
+            _restPositionTexture.Apply(false, true);
+            _simulationMaterial.SetTexture(RestPositionTextureId, _restPositionTexture);
+            RecordSnapshotTexture(_simulationMaterial, RestPositionTextureId, _restPositionTexture);
+            float restDensityReady = densities != null
+                ? 1f
+                : 0f;
+            _simulationMaterial.SetFloat(PrimitiveRestDensityReadyId, restDensityReady);
+            RecordSnapshotFloat(_simulationMaterial, PrimitiveRestDensityReadyId, restDensityReady);
+            _surfaceMaterial.SetTexture(RestPositionTextureId, _restPositionTexture);
+            RecordSnapshotTexture(_surfaceMaterial, RestPositionTextureId, _restPositionTexture);
+            Graphics.Blit(Texture2D.blackTexture, _stateA, _simulationMaterial, 9);
+            Graphics.Blit(Texture2D.blackTexture, _stateB, _simulationMaterial, 9);
+            _currentState = _stateA;
+            _nextState = _stateB;
+            UnityEngine.Object.Destroy(previous);
+        }
+
+        private void RefreshRestSurface(Vector3[] positions)
+        {
+            if (_shape == FerrofluidSurfaceShape.RoundedCube)
+            {
+                _simulationMaterial.SetFloat(PrimitiveSpikeSpacingId, FerrofluidEnvironmentObjects.EvaluateCubeSpikeSpacing(positions));
+                RecordSnapshotFloat(_simulationMaterial, PrimitiveSpikeSpacingId, FerrofluidEnvironmentObjects.EvaluateCubeSpikeSpacing(positions));
+            }
+
+            Graphics.Blit(Texture2D.blackTexture, _restSurface, _simulationMaterial, 6);
+            _simulationMaterial.SetTexture(RestSurfaceTextureId, _restSurface);
+            RecordSnapshotTexture(_simulationMaterial, RestSurfaceTextureId, _restSurface);
+        }
+
+        private Color[] ReadParticlePixels(RenderTexture source)
+        {
+            RenderTexture previous = RenderTexture.active;
+            Texture2D readback = new(_particleTextureSize, _particleTextureSize, TextureFormat.RGBAFloat, false, true);
+            try
+            {
+                RenderTexture.active = source;
+                readback.ReadPixels(new Rect(0f, 0f, _particleTextureSize, _particleTextureSize), 0, 0);
+                readback.Apply();
+                return readback.GetPixels();
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                UnityEngine.Object.Destroy(readback);
+            }
+        }
+
+        private Vector3[] ReadSettledPrimitiveHomes(float roundness)
+        {
+            // Readback happens only when a new layout is baked, never in the simulation frame loop.
+            Color[] pixels = ReadParticlePixels(_currentState);
+            Vector3[] homes = new Vector3[_particleCount];
+            for (int index = 0; index < homes.Length; index++)
+            {
+                homes[index] = FerrofluidEnvironmentObjects.EvaluateSiteSurfacePosition(
+                    _shape,
+                    new Vector2(pixels[index].r, pixels[index].g),
+                    roundness,
+                    0f);
+            }
+
+            return homes;
+        }
+
+        // Density changes replace the torus lattice; primitives also invalidate on geometry and pressure settings.
         private void ResetParticleField(int columns, int rows, float roundness)
         {
             Texture2D previousRest = _restPositionTexture;
@@ -1467,6 +1648,7 @@ namespace ChromaGLS.Settings
             _particleCount = columns * rows;
 
             _simulationMaterial.SetVector(DomainScaleId, EvaluateDomainScale(_shape, columns));
+            RecordSnapshotVector(_simulationMaterial, DomainScaleId, EvaluateDomainScale(_shape, columns));
             EnsureParticleTextureCapacity();
             _restPositionTexture = CreateInitialPositionTexture(columns, rows, _shape, _particleTextureSize, roundness, out _primitiveRestPositions);
             Graphics.Blit(_restPositionTexture, _stateA);
@@ -1474,11 +1656,14 @@ namespace ChromaGLS.Settings
             _currentState = _stateA;
             _nextState = _stateB;
             _simulationMaterial.SetInt(ParticleCountId, _particleCount);
+            RecordSnapshotInt(_simulationMaterial, ParticleCountId, _particleCount);
             _surfaceMaterial.SetInt(ParticleCountId, _particleCount);
+            RecordSnapshotInt(_surfaceMaterial, ParticleCountId, _particleCount);
 
             // Discard time left over from the old lattice so the replacement starts at its initial state.
             _lastSimulationAt = Time.unscaledTime;
             _simulationAccumulator = 0f;
+            _primitiveHistoryValid = false;
             UnityEngine.Object.Destroy(previousRest);
         }
 
@@ -1511,10 +1696,14 @@ namespace ChromaGLS.Settings
                 _restSurface = CreateRenderTexture("ChromaGLS Ferrofluid Rest Surface", _particleTextureSize, FilterMode.Point, TextureWrapMode.Clamp);
                 ReleasePrimitiveDeformationTextures();
                 CreatePrimitiveDeformationTextures();
+                _surfaceMaterial.SetTexture(DensityPressureTextureId, _densityPressure);
+                RecordSnapshotTexture(_surfaceMaterial, DensityPressureTextureId, _densityPressure);
             }
 
             _simulationMaterial.SetInt(ParticleTextureSizeId, _particleTextureSize);
+            RecordSnapshotInt(_simulationMaterial, ParticleTextureSizeId, _particleTextureSize);
             _surfaceMaterial.SetInt(ParticleTextureSizeId, _particleTextureSize);
+            RecordSnapshotInt(_surfaceMaterial, ParticleTextureSizeId, _particleTextureSize);
         }
 
         private void ReleaseAndRecreate(

@@ -1,0 +1,9 @@
+{
+  "solution": {
+    "path": "ChromaGLS.sln",
+    "projects": [
+      "ChromaGLS/ChromaGLS.csproj",
+      "ChromaGLS.Tests/ChromaGLS.Tests.csproj"
+    ]
+  }
+}

@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using CustomJSONData;
 using CustomJSONData.CustomBeatmap;
@@ -27,6 +25,8 @@ using _TransitionType = BeatmapSaveDataVersion3.BeatmapSaveData.TransitionType;
 #endif
 #if !PRE_V1_37_1
 using _SaveData = CustomJSONData.CustomBeatmap.Version3CustomBeatmapSaveData;
+#else
+using _SaveData = CustomJSONData.CustomBeatmap.CustomBeatmapSaveData;
 #endif
 
 #pragma warning disable SA1202
@@ -35,30 +35,11 @@ namespace ChromaGLS.HarmonyPatches
 {
     // Replace the V3 GLS reader so customData stays attached to each light event through conversion.
     // Fill the supplied list and advance the reader here because the original parser is skipped.
-#if PRE_V1_37_1
-    [HarmonyPatch("CustomJSONData.CustomBeatmap.CustomBeatmapSaveData", "DeserializeLightColorEventBoxGroupArray")]
-#else
     [HarmonyPatch(typeof(_SaveData), nameof(_SaveData.DeserializeLightColorEventBoxGroupArray))]
-#endif
     internal static class GlsDeserializePatch
     {
         // Retain box customData until the converter creates the runtime box.
         private static readonly ConditionalWeakTable<_LightColorEventBox, CustomData> BoxCustomData = new();
-
-#if PRE_V1_37_1
-        // Cache the legacy CJD parser delegate because this is called once per event box on the map-loading hot path.
-        private static readonly Func<JsonReader, _IndexFilter> DeserializeIndexFilterDelegate = CreateDeserializeIndexFilterDelegate();
-
-        private static Func<JsonReader, _IndexFilter> CreateDeserializeIndexFilterDelegate()
-        {
-            Type saveDataType = AccessTools.TypeByName("CustomJSONData.CustomBeatmap.CustomBeatmapSaveData")
-                ?? AccessTools.TypeByName("CustomJSONData.CustomBeatmap.Custom2_6_0AndEarlierBeatmapSaveData");
-            MethodInfo method = saveDataType.GetMethod(
-                "DeserializeIndexFilter",
-                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-            return (Func<JsonReader, _IndexFilter>)method.CreateDelegate(typeof(Func<JsonReader, _IndexFilter>));
-        }
-#endif
 
         internal static bool TryGetBoxCustomData(_LightColorEventBox box, out CustomData? customData)
         {
@@ -67,11 +48,7 @@ namespace ChromaGLS.HarmonyPatches
 
         private static _IndexFilter? DeserializeIndexFilter(JsonReader reader)
         {
-#if PRE_V1_37_1
-            return DeserializeIndexFilterDelegate(reader);
-#else
             return _SaveData.DeserializeIndexFilter(reader);
-#endif
         }
 
         private static _LightColorBaseData CreateLightColorBaseData(

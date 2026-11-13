@@ -70,6 +70,7 @@ namespace ChromaGLS.FerrofluidBundle
             Texture2D rest = new Texture2D(1, 1, TextureFormat.RGBAFloat, false, true);
             Texture2D state = new Texture2D(1, 1, TextureFormat.RGBAFloat, false, true);
             RenderTexture result = CreateTarget(1);
+            RenderTexture physical = CreateTarget(1);
             rest.SetPixel(0, 0, new Color(0.99f, -0.3f, 0f, 0f));
             rest.Apply(false, false);
             material.SetInt("_ParticleCount", 1);
@@ -88,27 +89,55 @@ namespace ChromaGLS.FerrofluidBundle
             material.SetTexture("_SiteSurfaceTex", Texture2D.whiteTexture);
             material.SetTexture("_DensityPressureTex", Texture2D.whiteTexture);
             material.SetTexture("_ForceTex", Texture2D.blackTexture);
-            state.SetPixel(0, 0, new Color(0.832f - 0.000001f, 0.3f, 0f, 0f));
-            state.Apply(false, false);
-            Graphics.Blit(Texture2D.blackTexture, result, material, 2);
-            Color before = Read(result)[0];
-            state.SetPixel(0, 0, new Color(0.832f + 0.000001f, 0.3f, 0f, 0f));
-            state.Apply(false, false);
-            Graphics.Blit(Texture2D.blackTexture, result, material, 2);
-            Color after = Read(result)[0];
-            if (Mathf.Abs(before.r - after.r) > 0.0001f || Mathf.Abs(before.g - after.g) > 0.0001f
-                || Mathf.Abs(before.b - after.b) > 0.0001f || Mathf.Abs(before.a - after.a) > 0.0001f)
+            float previousPositionJump = float.PositiveInfinity;
+            float previousVelocityJump = float.PositiveInfinity;
+            foreach (float epsilon in new[] { 0.0001f, 0.00001f, 0.000001f })
             {
-                throw new Exception("The shader spring changes abruptly across the pressure kernel boundary.");
+                (Vector3 position, Vector3 velocity) before = Capture(-epsilon);
+                (Vector3 position, Vector3 velocity) after = Capture(epsilon);
+                float positionJump = Vector3.Distance(before.position, after.position);
+                float velocityJump = Vector3.Distance(before.velocity, after.velocity);
+                Debug.Log($"[FerrofluidInteractionValidation] spring epsilon={epsilon:R} positionJump={positionJump:R} velocityJump={velocityJump:R}");
+                // A stiff spring has a large but finite slope. A discontinuity persists as the input interval shrinks.
+                if (float.IsNaN(positionJump) || float.IsInfinity(positionJump)
+                    || float.IsNaN(velocityJump) || float.IsInfinity(velocityJump)
+                    || positionJump > (previousPositionJump * 0.25f) + 0.00001f
+                    || velocityJump > (previousVelocityJump * 0.25f) + 0.00001f)
+                {
+                    throw new Exception("The shader spring does not converge continuously across the pressure kernel boundary.");
+                }
+
+                previousPositionJump = positionJump;
+                previousVelocityJump = velocityJump;
             }
 
+            if (previousPositionJump > 0.0001f)
+                throw new Exception("The shader spring produces a visible position jump for a microscopic input change.");
+
             RenderTexture.active = null;
-            foreach (UnityEngine.Object resource in new UnityEngine.Object[] { material, rest, state, result })
+            foreach (UnityEngine.Object resource in new UnityEngine.Object[] { material, rest, state, result, physical })
             {
                 UnityEngine.Object.DestroyImmediate(resource);
             }
 
             Debug.Log("[FerrofluidInteractionValidation] native shader spring stays continuous across the pressure kernel boundary.");
+
+            (Vector3 position, Vector3 velocity) Capture(float offset)
+            {
+                state.SetPixel(0, 0, new Color(0.832f + offset, 0.3f, 0f, 0f));
+                state.Apply(false, false);
+                material.SetTexture("_StateTex", state);
+                Graphics.Blit(Texture2D.blackTexture, result, material, 2);
+                material.SetTexture("_StateTex", result);
+                material.SetFloat("_ValidationMode", 2f);
+                Graphics.Blit(Texture2D.blackTexture, physical, material, 8);
+                Color velocity = Read(physical)[0];
+                Graphics.Blit(Texture2D.blackTexture, physical, material, 4);
+                Color position = Read(physical)[0];
+                return (
+                    new Vector3(position.r, position.g, position.b),
+                    new Vector3(velocity.r, velocity.g, velocity.b));
+            }
         }
 
         private static void ValidateRaycaster(Assembly plugin, Type shapeType)
@@ -157,6 +186,14 @@ namespace ChromaGLS.FerrofluidBundle
 
             rest.SetPixels(pixels);
             rest.Apply(false, false);
+            Texture2D support = new Texture2D(stride, stride, TextureFormat.RGBAFloat, false, true);
+            support.filterMode = FilterMode.Point;
+            Color[] supportPixels = new Color[stride * stride];
+            for (int index = 0; index < positions.Length; index++)
+                supportPixels[index] = new Color(0f, 0f, 0f, 0.003f * Mathf.Sin(index * 1.7f));
+
+            support.SetPixels(supportPixels);
+            support.Apply(false, false);
             RenderTexture current = CreateTarget(stride);
             RenderTexture next = CreateTarget(stride);
             RenderTexture sites = CreateTarget(stride);
@@ -193,8 +230,11 @@ namespace ChromaGLS.FerrofluidBundle
                 material.SetTexture("_DensityPressureTex", Texture2D.whiteTexture);
                 material.SetTexture("_ForceTex", Texture2D.blackTexture);
                 material.SetTexture("_SiteSurfaceTex", sites);
+                material.SetTexture("_SiteBulgeTex", support);
                 material.SetTexture("_RestSurfaceTex", restSurface);
                 material.SetTexture("_CoarseCandidateTex", candidates);
+                material.SetVector("_PrimitiveSurfaceLag", new Vector3(0.05f, 0.02f, 0f));
+                material.SetVector("_PrimitiveSurfaceAngularLag", new Vector3(0f, 0.4f, 0f));
             }
 
             accelerated.SetTexture("_StateTex", current);
@@ -204,7 +244,7 @@ namespace ChromaGLS.FerrofluidBundle
             if (profile)
             {
                 ProfileHeightPipeline(accelerated, exhaustive, sites, candidates, height, reference,
-                    new UnityEngine.Object[] { accelerated, exhaustive, rest, current, next, sites, restSurface, candidates, height, reference });
+                    new UnityEngine.Object[] { accelerated, exhaustive, rest, support, current, next, sites, restSurface, candidates, height, reference });
                 return;
             }
 
@@ -230,7 +270,9 @@ namespace ChromaGLS.FerrofluidBundle
                 Color[] expected = Read(reference);
                 for (int index = 0; index < actual.Length; index++)
                 {
-                    float error = Mathf.Max(Mathf.Abs(actual[index].r - expected[index].r), Mathf.Abs(actual[index].a - expected[index].a));
+                    float error = Mathf.Max(
+                        Mathf.Max(Mathf.Abs(actual[index].r - expected[index].r), Mathf.Abs(actual[index].a - expected[index].a)),
+                        Mathf.Abs(actual[index].b - expected[index].b));
                     if (float.IsNaN(error) || float.IsInfinity(error))
                     {
                         throw new Exception($"Non-finite height: shape={shape} frame={frame} texel={index}");
@@ -247,7 +289,7 @@ namespace ChromaGLS.FerrofluidBundle
             }
 
             RenderTexture.active = null;
-            foreach (UnityEngine.Object resource in new UnityEngine.Object[] { accelerated, exhaustive, rest, current, next, sites, restSurface, candidates, height, reference })
+            foreach (UnityEngine.Object resource in new UnityEngine.Object[] { accelerated, exhaustive, rest, support, current, next, sites, restSurface, candidates, height, reference })
             {
                 UnityEngine.Object.DestroyImmediate(resource);
             }

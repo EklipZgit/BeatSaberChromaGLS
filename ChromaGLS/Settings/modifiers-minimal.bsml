@@ -8,6 +8,15 @@
                   hover-hint='Enable a cube of ferrofluid on the floor as a fidget toy in the main menu.'/>
     <bool-setting text='Enable Ferrofluid Sphere' value='ferrofluid-sphere-enabled' apply-on-change='true'
                   hover-hint='Enable a sphere of ferrofluid on the floor as a fidget toy in the main menu.'/>
+    <bool-setting text='Enable Fluid Cube' value='fluid-cube-enabled' apply-on-change='true'
+                  hover-hint='Add an extra spike-free fluid cube with the same physics on the left side behind the originals.'/>
+    <bool-setting text='Enable Fluid Sphere' value='fluid-sphere-enabled' apply-on-change='true'
+                  hover-hint='Add an extra spike-free fluid sphere with the same physics on the right side behind the originals.'/>
+    <primary-button id='reflection-maps-button' text='REFLECTION MAPS' on-click='reflection-maps-open' preferred-width='30' preferred-height='8' font-size='4'/>
+    <bool-setting id='menu-floor-light-setting' text='Menu lights' value='parabola-light-enabled' apply-on-change='true'
+                  hover-hint='Enable the glowing floor light behind you in the main menu.'>
+      <primary-button id='menu-floor-light-tweak' text='Tweak' on-click='parabola-open' preferred-width='18' preferred-height='6' horizontal-fit='Unconstrained' vertical-fit='Unconstrained' font-size='3'/>
+    </bool-setting>
   </settings-container>
   <horizontal id='ferrofluid-preview-anchor' preferred-width='1' preferred-height='1'/>
 </bg>

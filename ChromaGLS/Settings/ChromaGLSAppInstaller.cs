@@ -21,6 +21,7 @@ namespace ChromaGLS.Settings
             // Bind the BSIPA-generated config into the app container so ChromaGLSSettingsUI can resolve it in the menu container.
             Container.BindInstance(_config);
             Container.BindInstance(_updateCheck);
+            Container.BindInterfacesAndSelfTo<FerrofluidReflectionPackService>().AsSingle().NonLazy();
         }
     }
 }

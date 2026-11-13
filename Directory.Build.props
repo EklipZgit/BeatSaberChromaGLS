@@ -28,4 +28,5 @@
     <Error Condition="'$(_ConfigGameVersion)' != '$(Configuration)' and '$(BeatSaberDir)' == ''"
            Text="No Beat Saber $(_ConfigGameVersion) install found. Set the $(_BeatSaberDirEnvName) environment variable to the install folder, or set BeatSaberDir/GameDirectory. See the README build section."/>
   </Target>
+  <Import Project="$(MSBuildThisFileDirectory)AssetBundleLoadingTools.Build.props"/>
 </Project>

@@ -7,6 +7,14 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         [HideInInspector] _DensityPressureTex ("Density Pressure", 2D) = "black" {}
         [HideInInspector] _ForceTex ("Force", 2D) = "black" {}
         [HideInInspector] _CoarseCandidateTex ("Coarse Height Candidates", 2D) = "black" {}
+        [HideInInspector] _SiteBulgeTex ("Site Density Support", 2D) = "black" {}
+        [HideInInspector] _PrimitivePressureSpacing ("Primitive Pressure Spacing", Float) = 0.6272
+        [HideInInspector] _PrimitiveHomeElasticityGain ("Primitive Home Elasticity Gain", Float) = 1
+        [HideInInspector] _PrimitiveHomeQuadraticGain ("Primitive Home Quadratic Gain", Float) = 65536
+        [HideInInspector] _PrimitiveHomeSoftRange ("Primitive Home Soft Range", Float) = 0.04
+        [HideInInspector] _PrimitiveHomeTravelLimit ("Primitive Home Travel Limit", Float) = 0.5
+        [HideInInspector] _PrimitiveHomeDampingGain ("Primitive Home Damping Gain", Float) = 1
+        [HideInInspector] _PrimitiveRestDensityReady ("Primitive Rest Density Ready", Float) = 0
     }
 
     CGINCLUDE
@@ -23,6 +31,7 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
     sampler2D _DensityPressureTex;
     sampler2D _ForceTex;
     sampler2D _CoarseCandidateTex;
+    sampler2D _SiteBulgeTex;
     float4 _CoarseCandidateTex_TexelSize;
     float _CoarseCandidateSize;
     int _ParticleCount;
@@ -40,6 +49,11 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
     float _PointerStrength;
     float3 _PrimitiveMagnetPosition;
     float3 _PrimitiveHandPosition;
+    // Grabbed bodies slide site bases across the shape surface in local space.
+    float4x4 _PrimitiveFrameRotation;
+    float3 _PrimitiveLinearVelocityDelta;
+    float3 _PrimitivePreviousAngularVelocity;
+    float3 _PrimitiveAngularVelocity;
     float _SecondaryMagneticFieldStrength;
     float2 _SecondaryPointerPosition;
     float _PointerRadius;
@@ -68,6 +82,17 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
     float2 _PrimitiveYawCosSin;
     float _SurfaceRoundness;
     float _PrimitiveCellMetric;
+    float _PrimitivePressureSpacing;
+    float _PrimitiveHomeElasticityGain;
+    float _PrimitiveHomeQuadraticGain;
+    float _PrimitiveHomeSoftRange;
+    float _PrimitiveHomeTravelLimit;
+    float _PrimitiveHomeDampingGain;
+    float _PrimitiveRestDensityReady;
+    int _PrimitiveBakePinnedCount;
+    float _ValidationMode;
+    float3 _ValidationLinearVelocity;
+    float3 _ValidationAngularVelocity;
 
     // Keep particle UVs independent of Graphics.Blit's source-texture flipping.
     struct FerrofluidBlitInput
@@ -91,10 +116,6 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
     }
 
     // Sample individual particles without filtering or mipmaps.
-    float4 LoadFerrofluidTexel(sampler2D textureSampler, int index)
-    {
-        return tex2Dlod(textureSampler, float4(FerrofluidParticleUv(index), 0.0, 0.0));
-    }
 
 
 
@@ -180,6 +201,9 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         return position;
     }
 
+    void FerrofluidPrimitiveFrame(float2 chart, out float3 position, out float3 normal, out float3 jx, out float3 jy);
+    float2 FerrofluidTangentToChart(float3 physical, float3 jx, float3 jy);
+
     float4 FerrofluidPressureFragment(FerrofluidBlitVaryings input) : SV_Target
     {
         int particleId = FerrofluidParticleId(input.uv);
@@ -189,6 +213,7 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         }
 
         float2 position = LoadFerrofluidTexel(_StateTex, particleId).xy;
+        float4 surface = LoadFerrofluidTexel(_SiteSurfaceTex, particleId);
         float selfKernel = _Poly6 * _HSQ * _HSQ * _HSQ;
         float density = _Mass * selfKernel;
         [loop]
@@ -199,9 +224,20 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
                 continue;
             }
 
-            float2 neighborPosition = LoadFerrofluidTexel(_StateTex, neighborId).xy;
-            float2 physicalDelta = FerrofluidPairDelta(position, neighborPosition) * _DomainScale;
-            float radiusSquared = dot(physicalDelta, physicalDelta);
+            float radiusSquared;
+            if (_SurfaceShapeMode > 0.5)
+            {
+                float4 neighborSurface = LoadFerrofluidTexel(_SiteSurfaceTex, neighborId);
+                float scale = _PrimitivePressureSpacing / max((surface.w + neighborSurface.w) * 0.5, 0.0001);
+                float3 delta = (neighborSurface.xyz - surface.xyz) * scale;
+                radiusSquared = dot(delta, delta);
+            }
+            else
+            {
+                float2 neighborPosition = LoadFerrofluidTexel(_StateTex, neighborId).xy;
+                float2 physicalDelta = FerrofluidPairDelta(position, neighborPosition) * _DomainScale;
+                radiusSquared = dot(physicalDelta, physicalDelta);
+            }
             if (radiusSquared < _HSQ)
             {
                 float remainder = max(0.0, _HSQ - radiusSquared);
@@ -209,7 +245,17 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             }
         }
 
-        float pressure = max(_GasConstant * (density - _RestDensity), 0.0);
+        float pressure;
+        if (_SurfaceShapeMode > 0.5 && _PrimitiveRestDensityReady > 0.5)
+        {
+            // The baked density is the site's resting reference. A global threshold below self density cannot produce attraction.
+            float restDensity = LoadFerrofluidTexel(_RestPositionTex, particleId).z;
+            pressure = _GasConstant * (density - restDensity);
+        }
+        else
+        {
+            pressure = max(_GasConstant * (density - _RestDensity), 0.0);
+        }
         return float4(density, pressure, 0.0, 0.0);
     }
 
@@ -224,6 +270,13 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         float4 state = LoadFerrofluidTexel(_StateTex, particleId);
         float2 densityPressure = LoadFerrofluidTexel(_DensityPressureTex, particleId).xy;
         float2 physicalForce = 0.0;
+        float3 surfaceForce = 0.0;
+        float4 surface = LoadFerrofluidTexel(_SiteSurfaceTex, particleId);
+        float3 position, normal, jx, jy;
+        float scale = _PrimitivePressureSpacing / max(surface.w, 0.0001);
+        if (_SurfaceShapeMode > 0.5)
+            FerrofluidPrimitiveFrame(state.xy, position, normal, jx, jy);
+
         [loop]
         for (int neighborId = 0; neighborId < _ParticleCount; neighborId++)
         {
@@ -232,10 +285,24 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
                 continue;
             }
 
-            float4 neighborState = LoadFerrofluidTexel(_StateTex, neighborId);
-            float2 velocityMirror;
-            float2 physicalDelta = FerrofluidPairDelta(state.xy, neighborState.xy, velocityMirror) * _DomainScale;
-            float radiusSquared = dot(physicalDelta, physicalDelta);
+            float3 surfaceDelta = 0.0;
+            float2 physicalDelta = 0.0;
+            float2 velocityMirror = 1.0;
+            float4 neighborState = 0.0;
+            float radiusSquared;
+            if (_SurfaceShapeMode > 0.5)
+            {
+                float4 neighborSurface = LoadFerrofluidTexel(_SiteSurfaceTex, neighborId);
+                float pairScale = _PrimitivePressureSpacing / max((surface.w + neighborSurface.w) * 0.5, 0.0001);
+                surfaceDelta = (neighborSurface.xyz - surface.xyz) * pairScale;
+                radiusSquared = dot(surfaceDelta, surfaceDelta);
+            }
+            else
+            {
+                neighborState = LoadFerrofluidTexel(_StateTex, neighborId);
+                physicalDelta = FerrofluidPairDelta(state.xy, neighborState.xy, velocityMirror) * _DomainScale;
+                radiusSquared = dot(physicalDelta, physicalDelta);
+            }
             if (radiusSquared >= _HSQ || radiusSquared < 0.0000000001)
             {
                 continue;
@@ -246,14 +313,37 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             float neighborDensity = max(neighborDensityPressure.x, 0.000000001);
             float kernelRemainder = max(0.0, _H - radius);
             float pressureWeight = (_SpikyGradient * kernelRemainder * kernelRemainder) / radius;
-            float pressureScale = _Mass * ((densityPressure.y + neighborDensityPressure.y) / (2.0 * neighborDensity)) * pressureWeight;
-            float2 pressureForce = physicalDelta * pressureScale;
+            float pairPressure = (densityPressure.y + neighborDensityPressure.y) * 0.5;
+            if (_SurfaceShapeMode > 0.5 && _PrimitiveRestDensityReady > 0.5)
+            {
+                // Sparse neighborhoods attract stretched pairs, but compressed pairs must still separate rather than form tensile clumps.
+                float relativeStretch = (radius / _PrimitivePressureSpacing) - 1.0;
+                pairPressure = max(pairPressure, 0.0) + (min(pairPressure, 0.0) * relativeStretch);
+            }
+
+            float pressureScale = _Mass * (pairPressure / neighborDensity) * pressureWeight;
             float viscosityWeight = _ViscosityLaplacian * (1.0 - (radius / _H));
-            // Mirror the neighbor's velocity too, or viscosity treats the seam as a sudden change in velocity.
-            float2 physicalVelocityDelta = ((neighborState.zw * velocityMirror) - state.zw) * _DomainScale;
-            float2 viscosityForce = physicalVelocityDelta * (_Viscosity * _Mass * viscosityWeight / neighborDensity);
-            physicalForce += pressureForce + viscosityForce;
+            float viscosityScale = _Viscosity * _Mass * viscosityWeight / neighborDensity;
+            if (_SurfaceShapeMode > 0.5)
+            {
+                neighborState = LoadFerrofluidTexel(_StateTex, neighborId);
+                float3 neighborPosition, neighborNormal, neighborJx, neighborJy;
+                FerrofluidPrimitiveFrame(neighborState.xy, neighborPosition, neighborNormal, neighborJx, neighborJy);
+                // Each chart velocity belongs to its own Jacobian, including within a face and across folds.
+                float3 surfaceVelocityDelta = (
+                    (neighborJx * neighborState.z) + (neighborJy * neighborState.w)
+                    - (jx * state.z) - (jy * state.w)) * scale;
+                surfaceForce += (surfaceDelta * pressureScale) + (surfaceVelocityDelta * viscosityScale);
+            }
+            else
+            {
+                float2 physicalVelocityDelta = ((neighborState.zw * velocityMirror) - state.zw) * _DomainScale;
+                physicalForce += (physicalDelta * pressureScale) + (physicalVelocityDelta * viscosityScale);
+            }
         }
+
+        if (_SurfaceShapeMode > 0.5)
+            return float4(FerrofluidTangentToChart(surfaceForce / scale, jx, jy), 0.0, 0.0);
 
         return float4(physicalForce / _DomainScale, 0.0, 0.0);
     }
@@ -282,6 +372,83 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             * min(tangentLength, _MaximumSlide * slideProfile * physicalScale);
     }
 
+    // Analytic octahedral chart frame: position, surface normal, and the Jacobian columns that map
+    // chart velocity to physical tangent velocity (and back through the Gram inverse below).
+    void FerrofluidPrimitiveFrame(float2 chart, out float3 position, out float3 normal, out float3 jx, out float3 jy)
+    {
+        float2 p = saturate((chart * 0.5) + 0.5) * 2.0 - 1.0;
+        float sx = p.x >= 0.0 ? 1.0 : -1.0;
+        float sy = p.y >= 0.0 ? 1.0 : -1.0;
+        float ax = abs(p.x);
+        float ay = abs(p.y);
+        float3 q;
+        float3 qx;
+        float3 qy;
+        if (1.0 - ax - ay >= 0.0)
+        {
+            q = float3(p.x, 1.0 - ax - ay, p.y);
+            qx = float3(1.0, -sx, 0.0);
+            qy = float3(0.0, -sy, 1.0);
+        }
+        else
+        {
+            q = float3((1.0 - ay) * sx, 1.0 - ax - ay, (1.0 - ax) * sy);
+            qx = float3(0.0, -sx, -sx * sy);
+            qy = float3(-sx * sy, -sy, 0.0);
+        }
+
+        float2 yaw = _PrimitiveYawCosSin;
+        q = float3((q.x * yaw.x) + (q.z * yaw.y), q.y, (q.z * yaw.x) - (q.x * yaw.y));
+        qx = float3((qx.x * yaw.x) + (qx.z * yaw.y), qx.y, (qx.z * yaw.x) - (qx.x * yaw.y));
+        qy = float3((qy.x * yaw.x) + (qy.z * yaw.y), qy.y, (qy.z * yaw.x) - (qy.x * yaw.y));
+        position = FerrofluidPrimitiveBasePosition((chart * 0.5) + 0.5, _SurfaceShapeMode, _SurfaceRoundness, yaw);
+        normal = _SurfaceShapeMode > 1.5
+            ? normalize(position)
+            : normalize(sign(position) * pow(abs(position), lerp(8.0, 2.0, saturate(_SurfaceRoundness)) - 1.0));
+        float scale = dot(position, q) / max(dot(q, q), 0.000001);
+        float normalQ = max(dot(normal, q), 0.000001);
+        jx = scale * (qx - (q * (dot(normal, qx) / normalQ)));
+        jy = scale * (qy - (q * (dot(normal, qy) / normalQ)));
+    }
+
+    float2 FerrofluidTangentToChart(float3 physical, float3 jx, float3 jy)
+    {
+        float jxx = dot(jx, jx);
+        float jxy = dot(jx, jy);
+        float jyy = dot(jy, jy);
+        float inverse = 1.0 / max((jxx * jyy) - (jxy * jxy), 0.0000001);
+        return float2(
+            ((jyy * dot(physical, jx)) - (jxy * dot(physical, jy))) * inverse,
+            ((jxx * dot(physical, jy)) - (jxy * dot(physical, jx))) * inverse);
+    }
+
+    float4 FerrofluidInitialStateFragment(FerrofluidBlitVaryings input) : SV_Target
+    {
+        float4 rest = tex2D(_RestPositionTex, input.uv);
+        return float4(rest.x, rest.y, 0.0, 0.0);
+    }
+
+    // The editor harness writes a physical velocity field and reads force/velocity back without chart units.
+    float4 FerrofluidValidationFragment(FerrofluidBlitVaryings input) : SV_Target
+    {
+        int id = FerrofluidParticleId(input.uv);
+        if (id >= _ParticleCount)
+            return 0.0;
+
+        float4 state = LoadFerrofluidTexel(_StateTex, id);
+        float3 position, normal, jx, jy;
+        FerrofluidPrimitiveFrame(state.xy, position, normal, jx, jy);
+        if (_ValidationMode < 0.5)
+        {
+            float3 physical = _ValidationLinearVelocity + cross(_ValidationAngularVelocity, position);
+            physical -= normal * dot(physical, normal);
+            return float4(state.xy, FerrofluidTangentToChart(physical, jx, jy));
+        }
+
+        float2 chart = _ValidationMode < 1.5 ? LoadFerrofluidTexel(_ForceTex, id).xy : state.zw;
+        return float4((jx * chart.x) + (jy * chart.y), 1.0);
+    }
+
     float4 FerrofluidIntegrateFragment(FerrofluidBlitVaryings input) : SV_Target
     {
         int particleId = FerrofluidParticleId(input.uv);
@@ -305,14 +472,98 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         }
         else
         {
-            float3 home = FerrofluidPrimitiveBasePosition((restPosition * 0.5) + 0.5, _SurfaceShapeMode, _SurfaceRoundness, _PrimitiveYawCosSin);
-            float3 normal = _SurfaceShapeMode > 1.5
-                ? normalize(home)
-                : normalize(sign(home) * pow(abs(home), lerp(8.0, 2.0, saturate(_SurfaceRoundness)) - 1.0));
+            float3 live;
+            float3 liveNormal;
+            float3 jx;
+            float3 jy;
+            FerrofluidPrimitiveFrame(state.xy, live, liveNormal, jx, jy);
+            float3 home;
+            float3 homeNormal;
+            float3 homeJx;
+            float3 homeJy;
+            FerrofluidPrimitiveFrame(restPosition, home, homeNormal, homeJx, homeJy);
             float spacing = LoadFerrofluidTexel(_SiteSurfaceTex, particleId).w;
-            float3 slide = FerrofluidPrimitiveSlide(home, normal, spacing, _PrimitiveMagnetPosition, _PointerStrength)
-                + FerrofluidPrimitiveSlide(home, normal, spacing, _PrimitiveHandPosition, _SecondaryMagneticFieldStrength);
+            float3 slide = FerrofluidPrimitiveSlide(home, homeNormal, spacing, _PrimitiveMagnetPosition, _PointerStrength)
+                + FerrofluidPrimitiveSlide(home, homeNormal, spacing, _PrimitiveHandPosition, _SecondaryMagneticFieldStrength);
+            // Body momentum transports the physical tangent velocity: relative-frame rotation,
+            // the 0.28 linear delta, and the released angular momentum each carry forward.
+            // One body-surface velocity delta couples linear and angular motion at the same gain.
+            float3 bodyDelta = _PrimitiveLinearVelocityDelta
+                + mul((float3x3)_PrimitiveFrameRotation, cross(_PrimitivePreviousAngularVelocity, live))
+                - cross(_PrimitiveAngularVelocity, live);
+            float3 u = mul((float3x3)_PrimitiveFrameRotation, (jx * state.z) + (jy * state.w))
+                + (0.28 * bodyDelta);
+            u -= liveNormal * dot(liveNormal, u);
+            velocity = FerrofluidTangentToChart(u, jx, jy) + (acceleration * deltaTime);
             targetPosition = (FerrofluidPrimitiveSurfaceUv(home + slide, _PrimitiveYawCosSin) * 2.0) - 1.0;
+            float3 targetSurface = FerrofluidPrimitiveBasePosition((targetPosition * 0.5) + 0.5, _SurfaceShapeMode, _SurfaceRoundness, _PrimitiveYawCosSin);
+            // The pull direction is the physical tangent, not a chart delta that deforms under folds.
+            float3 homePull = home - live;
+            float3 targetOffset = (targetSurface - home) + (homePull * _PrimitiveHomeElasticityGain);
+            velocity += FerrofluidTangentToChart(targetOffset, jx, jy) * _Elasticity * deltaTime;
+            float3 homeOffset = live - home;
+            float homeLimit = _PrimitiveHomeTravelLimit;
+            // Keep small shifts soft, then harden quadratically before a face can drain.
+            float stretch = max(length(homeOffset) - (homeLimit * _PrimitiveHomeSoftRange), 0.0);
+            float extraElasticity = _Elasticity * _PrimitiveHomeElasticityGain * _PrimitiveHomeQuadraticGain * stretch * stretch / (homeLimit * homeLimit);
+            float homeImpulse = extraElasticity * deltaTime;
+            velocity = (velocity + (FerrofluidTangentToChart(homePull, jx, jy) * homeImpulse)) / (1.0 + (homeImpulse * deltaTime));
+            velocity *= exp(-_Damping * _PrimitiveHomeDampingGain * deltaTime);
+            float3 physical = (jx * velocity.x) + (jy * velocity.y);
+            // A large chart Euler step can overshoot a nearby home. Retract the physical step to the surface.
+            float2 position = (FerrofluidPrimitiveSurfaceUv(live + (physical * deltaTime), _PrimitiveYawCosSin) * 2.0) - 1.0;
+            float3 nextSurface = FerrofluidPrimitiveBasePosition((position * 0.5) + 0.5, _SurfaceShapeMode, _SurfaceRoundness, _PrimitiveYawCosSin);
+            // The magnet target never expands the configured home limit.
+            float bound = homeLimit;
+            bool capped = length(nextSurface - home) > bound;
+            if (capped)
+            {
+                float low = 0.0;
+                float high = 1.0;
+                [unroll]
+                for (int iteration = 0; iteration < 6; iteration++)
+                {
+                    float middle = (low + high) * 0.5;
+                    float2 candidate = restPosition + (FerrofluidPairDelta(restPosition, position) * middle);
+                    float2 foldVelocity = velocity;
+                    candidate = FerrofluidChartFold(candidate, foldVelocity);
+                    float3 candidateSurface = FerrofluidPrimitiveBasePosition((candidate * 0.5) + 0.5, _SurfaceShapeMode, _SurfaceRoundness, _PrimitiveYawCosSin);
+                    if (length(candidateSurface - home) <= bound)
+                    {
+                        low = middle;
+                    }
+                    else
+                    {
+                        high = middle;
+                    }
+                }
+
+                float2 foldVelocity = velocity;
+                position = FerrofluidChartFold(restPosition + (FerrofluidPairDelta(restPosition, position) * low), foldVelocity);
+            }
+
+            float3 newSurface;
+            float3 newNormal;
+            float3 newJx;
+            float3 newJy;
+            FerrofluidPrimitiveFrame(position, newSurface, newNormal, newJx, newJy);
+            // A site sliding across the rotating surface leaves the body's velocity field: the
+            // Coriolis term removes the body-surface speed gained by that relative motion.
+            physical -= 0.28 * cross(_PrimitiveAngularVelocity, newSurface - live);
+            if (capped)
+            {
+                float3 outward = newSurface - home;
+                outward -= newNormal * dot(newNormal, outward);
+                float outwardLength = length(outward);
+                if (outwardLength > 0.000001)
+                {
+                    float3 outwardDirection = outward / outwardLength;
+                    physical -= outwardDirection * max(0.0, dot(physical, outwardDirection));
+                }
+            }
+
+            velocity = FerrofluidTangentToChart(physical, newJx, newJy);
+            return float4(position, velocity);
         }
 
         float2 targetDelta = FerrofluidPairDelta(state.xy, targetPosition);
@@ -361,6 +612,27 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         }
 
         return float4(restSurfacePosition, max(spacing, 0.0001));
+    }
+
+    float4 FerrofluidBakeIntegrateFragment(FerrofluidBlitVaryings input) : SV_Target
+    {
+        int particleId = FerrofluidParticleId(input.uv);
+        float2 rest = LoadFerrofluidTexel(_RestPositionTex, particleId).xy;
+        if (particleId >= _ParticleCount || particleId < _PrimitiveBakePinnedCount)
+            return float4(rest, 0.0, 0.0);
+
+        float4 state = LoadFerrofluidTexel(_StateTex, particleId);
+        float deltaTime = _DeltaTimeMilliseconds * 0.001;
+        float density = LoadFerrofluidTexel(_DensityPressureTex, particleId).x;
+        float2 velocity = state.zw + (LoadFerrofluidTexel(_ForceTex, particleId).xy * deltaTime / density);
+        velocity *= exp(-_Damping * deltaTime);
+        float3 position, normal, jx, jy;
+        FerrofluidPrimitiveFrame(state.xy, position, normal, jx, jy);
+        float3 physical = (jx * velocity.x) + (jy * velocity.y);
+        float2 next = FerrofluidChartFold(state.xy + (velocity * deltaTime), velocity);
+        FerrofluidPrimitiveFrame(next, position, normal, jx, jy);
+        physical -= normal * dot(physical, normal);
+        return float4(next, FerrofluidTangentToChart(physical, jx, jy));
     }
 
     float4 FerrofluidSiteSurfaceFragment(FerrofluidBlitVaryings input) : SV_Target
@@ -553,7 +825,8 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         inout float resultDistance,
         inout float nearestDistance,
         inout float secondNearestDistance,
-        inout float2 nearestSiteParticleUv)
+        inout float2 nearestSiteParticleUv,
+        inout float2 densitySupport)
     {
         float distanceToParticle = FerrofluidHeightDistance(
             particleId,
@@ -575,6 +848,14 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         float blend = smoothstep(-1.0, 1.0, (resultDistance - distanceToParticle) / _SmoothFactor);
         resultDistance = lerp(resultDistance, distanceToParticle, blend)
             - (blend * (1.0 - blend) * (_SmoothFactor / (1.0 + (3.0 * _SmoothFactor))));
+        if (_SurfaceShapeMode > 0.5)
+        {
+            // Blend density support in physical space, independently of the nearest spike's identity.
+            float radius = distanceToParticle / (1.5 * _PrimitiveCellMetric * _HeightMapScale);
+            float remainder = max(1.0 - (radius * radius), 0.0);
+            float weight = remainder * remainder * remainder;
+            densitySupport += float2(LoadFerrofluidTexel(_SiteBulgeTex, particleId).w * weight, weight);
+        }
     }
 
     float4 FerrofluidHeightMapFragment(FerrofluidBlitVaryings input) : SV_Target
@@ -588,6 +869,7 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
         float nearestDistance = 10000000000.0;
         float secondNearestDistance = 10000000000.0;
         float2 nearestSiteParticleUv = 0.0;
+        float2 densitySupport = 0.0;
 
     #if FERROFLUID_BRUTE_FORCE_HEIGHT_MAP
         [loop]
@@ -601,7 +883,8 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
                 resultDistance,
                 nearestDistance,
                 secondNearestDistance,
-                nearestSiteParticleUv);
+                nearestSiteParticleUv,
+                densitySupport);
         }
     #else
         if (_SurfaceShapeMode > 0.5)
@@ -641,7 +924,7 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
                 int id = primitiveIds[candidateRank];
                 if (id >= 0)
                 {
-                    FerrofluidAccumulateHeightParticle(id, position, surfaceMetric, texelSurfacePosition, resultDistance, nearestDistance, secondNearestDistance, nearestSiteParticleUv);
+                    FerrofluidAccumulateHeightParticle(id, position, surfaceMetric, texelSurfacePosition, resultDistance, nearestDistance, secondNearestDistance, nearestSiteParticleUv, densitySupport);
                 }
             }
 
@@ -651,15 +934,17 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             float omittedLowerBound = bounds.x - (length(texelSurfacePosition - center) / bounds.y * _PrimitiveCellMetric * _HeightMapScale);
             // The pairwise smooth minimum stays within one smoothing width of its nearest input.
             // Two widths ensure that omitted sites cannot alter an earlier accumulation before the nearest site replaces it.
-            if (omittedLowerBound <= secondNearestDistance + (2.0 * _SmoothFactor))
+            float supportRadius = 1.5 * _PrimitiveCellMetric * _HeightMapScale;
+            if (omittedLowerBound <= max(secondNearestDistance + (2.0 * _SmoothFactor), supportRadius))
             {
                 resultDistance = 1.0;
                 nearestDistance = 10000000000.0;
                 secondNearestDistance = 10000000000.0;
+                densitySupport = 0.0;
                 [loop]
                 for (int particleId = 0; particleId < _ParticleCount; particleId++)
                 {
-                    FerrofluidAccumulateHeightParticle(particleId, position, surfaceMetric, texelSurfacePosition, resultDistance, nearestDistance, secondNearestDistance, nearestSiteParticleUv);
+                    FerrofluidAccumulateHeightParticle(particleId, position, surfaceMetric, texelSurfacePosition, resultDistance, nearestDistance, secondNearestDistance, nearestSiteParticleUv, densitySupport);
                 }
             }
         }
@@ -758,7 +1043,8 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
                     resultDistance,
                     nearestDistance,
                     secondNearestDistance,
-                    nearestSiteParticleUv);
+                    nearestSiteParticleUv,
+                    densitySupport);
             }
         }
     #endif
@@ -788,9 +1074,11 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             : 1.0;
         spikeHeight *= boundaryVisibility;
         sharpConeHeight *= boundaryVisibility;
+        // One scalar ID leaves a channel for continuous support. Regularization fades empty neighborhoods to the base surface.
         return float4(
             spikeHeight * _HeightFactor,
-            nearestSiteParticleUv,
+            FerrofluidParticleId(nearestSiteParticleUv),
+            densitySupport.x / (densitySupport.y + 0.0001),
             sharpConeHeight * _HeightFactor);
     }
     ENDCG
@@ -865,6 +1153,35 @@ Shader "Hidden/ChromaGLS/FerrofluidSimulation"
             #pragma fragment FerrofluidRestSurfaceFragment
             ENDCG
         }
+
+        Pass
+        {
+            Name "BAKE_INTEGRATE"
+            CGPROGRAM
+            #pragma vertex FerrofluidBlitVertex
+            #pragma fragment FerrofluidBakeIntegrateFragment
+            ENDCG
+        }
+
+        Pass
+        {
+            Name "VALIDATION"
+            CGPROGRAM
+            #pragma vertex FerrofluidBlitVertex
+            #pragma fragment FerrofluidValidationFragment
+            ENDCG
+        }
+
+        Pass
+        {
+            // Rest z is baseline density, not velocity: only the home position seeds the state.
+            Name "INITIAL_STATE"
+            CGPROGRAM
+            #pragma vertex FerrofluidBlitVertex
+            #pragma fragment FerrofluidInitialStateFragment
+            ENDCG
+        }
+
     }
 
     Fallback Off
