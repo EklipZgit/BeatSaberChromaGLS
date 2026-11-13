@@ -40,8 +40,10 @@ namespace ChromaGLS.Settings
         private static AssetBundle? _bundle;
         private static string? _reflectionPackPath;
         private static bool _attemptedLoad;
+        private static bool _suspended;
         private readonly SemaphoreSlim _loadGate = new(1, 1);
         private int _loadGeneration;
+        private bool _released;
         private ReflectionQuality? _loadedTier;
         private AssetBundle? _reflectionBundle;
 
@@ -97,8 +99,37 @@ namespace ChromaGLS.Settings
 
         internal static bool ReflectionPackAvailable => _reflectionPackPath != null;
 
+        // Menu exit releases every core shader/texture through the retained bundle; menu return
+        // allows the next TryGet to cold-load a fresh owner.
+        internal static void BeginMenuSession()
+        {
+            _suspended = false;
+        }
+
+        internal static void EndMenuSession()
+        {
+            _suspended = true;
+            FerrofluidGpuResources? old = _instance;
+            _instance = null;
+            if (old != null)
+            {
+                old._released = true;
+                old.ReleaseOwned();
+            }
+
+            if (_bundle != null)
+            {
+                _bundle.Unload(true);
+                _bundle = null;
+            }
+
+            _attemptedLoad = false;
+        }
+
         internal async Task<bool> TryLoadReflectionsAsync(ReflectionQuality quality)
         {
+            if (_released)
+                return false;
             if (_loadedTier == quality)
                 return true;
             if (quality == ReflectionQuality.None)
@@ -128,7 +159,7 @@ namespace ChromaGLS.Settings
 
                 int roomResolution = ReflectionQualitySettings.GetRoomResolution(quality);
                 int floorResolution = ReflectionQualitySettings.GetResolution(quality);
-                bool high = quality == ReflectionQuality.High;
+                bool high = quality is ReflectionQuality.High or ReflectionQuality.Ultra;
                 Cubemap? on = pack.LoadAsset<Cubemap>(high ? RoomOnHighAsset : RoomOnAsset);
                 Cubemap? off = pack.LoadAsset<Cubemap>(high ? RoomOffHighAsset : RoomOffAsset);
                 Texture2D? feet = pack.LoadAsset<Texture2D>(high ? FloorFeetHighAsset : FloorFeetAsset);
@@ -198,9 +229,8 @@ namespace ChromaGLS.Settings
 
         private void ClearOwnedData()
         {
-            // The core container was already released with Unload(false); its shader, LUT and
-            // fallback objects live on independently. The tier container owns only the loaded
-            // reflection textures, so unloading it destroys them without touching core assets.
+            // The core and reflection packs have separate owners. Releasing a tier leaves the
+            // core shaders and textures alive until EndMenuSession unloads the core bundle.
             if (_reflectionBundle != null)
             {
                 _reflectionBundle.Unload(true);
@@ -317,9 +347,15 @@ namespace ChromaGLS.Settings
 
         private static bool Finite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 
-        // Cache load failure until restart so song selection cannot repeatedly allocate resources or log the same error.
+        // Cache load failure until the next menu session so song selection cannot repeatedly allocate resources or log the same error.
         internal static bool TryGet(out FerrofluidGpuResources? resources)
         {
+            if (_suspended)
+            {
+                resources = null;
+                return false;
+            }
+
             if (_instance != null)
             {
                 resources = _instance;
@@ -402,8 +438,8 @@ namespace ChromaGLS.Settings
 #endif
                 };
 
-                _bundle.Unload(false);
-                _bundle = null;
+                // Keep the small core bundle loaded through the menu session so EndMenuSession
+                // can unload the shader/LUT/environment assets it owns without a manual list.
                 Plugin.Log.Info($"[ChromaGLS Ferrofluid] GPU assets loaded in Unity {Application.unityVersion}; renderer={SystemInfo.graphicsDeviceName} api={SystemInfo.graphicsDeviceType}.");
                 resources = _instance;
                 return true;

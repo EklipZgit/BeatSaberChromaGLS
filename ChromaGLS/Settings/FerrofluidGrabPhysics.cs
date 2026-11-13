@@ -99,8 +99,16 @@ namespace ChromaGLS.Settings
         internal const float FloorFriction = 0.15f;
         internal const float MaximumCubeFloorFriction = 0.5f;
         internal const float DefaultCubeFloorFriction = 0.25f;
-        internal const float DefaultCubeCornerFriction = 0.01f;
+        internal const float DefaultCubeCornerFriction = 0.0125f;
         internal const float DefaultCubeFaceLandingStrength = 0.55f;
+
+        // A corner top moving faster than 0.05 m/s slides, so the shared material's normal floor
+        // grip applies; only an effectively stationary top keeps the low corner grip.
+        internal const float CubeCornerMotionSpeedSquared = 0.05f * 0.05f;
+
+        // 6 m/s bounds the extra kick spin-generated contacts can add to a real bump without
+        // suppressing the translational bounce the incoming speed already justifies.
+        private const float CubeImpactMaximumKickSpeed = 6f;
         internal const int EnclosureLayer = 3;
 
         internal const float FloorRestitution = 0.468f;
@@ -146,6 +154,7 @@ namespace ChromaGLS.Settings
 #endif
 
         internal static void RouteControllerInput(
+            FerrofluidGrabOwnership ownership,
             object? ownerHand,
             object? selectedHand,
             bool hovered,
@@ -155,11 +164,14 @@ namespace ChromaGLS.Settings
             out object? nonDominantHand)
         {
             dominantHand = ownerHand ?? (hovered ? selectedHand : null);
-            nonDominantHand = ReferenceEquals(dominantHand, leftHand)
+            object? other = ReferenceEquals(dominantHand, leftHand)
                 ? rightHand
                 : ReferenceEquals(dominantHand, rightHand)
                     ? leftHand
                     : null;
+            nonDominantHand = other != null && ownership.HeldTarget(other) == null
+                ? other
+                : null;
         }
 
         internal static Vector3 EvaluatePlayerRight(Quaternion headRotation)
@@ -239,6 +251,18 @@ namespace ChromaGLS.Settings
                 return 0f;
 
             return strength * Mathf.Pow(startAngleDegrees / Mathf.Max(theta, 0.1f), exponent);
+        }
+
+        // Settling brakes tipping, not twist about the landing face.
+        internal static Vector3 EvaluateCubeFaceSettlingAngularVelocity(
+            Quaternion rotation,
+            Vector3 angularVelocity,
+            float rate,
+            float deltaTime)
+        {
+            Vector3 normal = EvaluateCubeUpFacingNormal(rotation);
+            Vector3 normalSpin = normal * Vector3.Dot(angularVelocity, normal);
+            return normalSpin + ((angularVelocity - normalSpin) * Mathf.Exp(-rate * deltaTime));
         }
 
         private static Vector3 EvaluateCubeUpFacingNormal(Quaternion rotation)
@@ -328,16 +352,59 @@ namespace ChromaGLS.Settings
             float minClearance = Mathf.Min(
                 cornerClearances.x,
                 Mathf.Min(cornerClearances.y, cornerClearances.z));
+            return supportGap <= 0.01f
+                && minClearance > (active ? 0.002f : 0.004f)
+                && IsCubeCornerSpin(active, localAngularVelocity);
+        }
+
+        internal static bool IsCubeCornerStationary(float horizontalSpeedSquared)
+            => horizontalSpeedSquared <= CubeCornerMotionSpeedSquared;
+
+        private static bool IsCubeCornerSpin(bool active, Vector3 localAngularVelocity)
+        {
             float omegaMagnitudeSquared = localAngularVelocity.sqrMagnitude;
             float axisSum = Mathf.Abs(localAngularVelocity.x)
                 + Mathf.Abs(localAngularVelocity.y)
                 + Mathf.Abs(localAngularVelocity.z);
-            return supportGap <= 0.01f
-                && minClearance > (active ? 0.002f : 0.004f)
-                && omegaMagnitudeSquared > 0.0025f
+            return omegaMagnitudeSquared > 0.0025f
                 && (axisSum * axisSum)
                     >= 3f * (active ? 0.90f * 0.90f : 0.95f * 0.95f) * omegaMagnitudeSquared;
         }
+
+        // Angular-state-only predicate: fast spin returns a solver-bias scale.
+        // The caller applies it to a cube's own external contact pairs, excluding the
+        // configured floor; slow bodies keep the native tensor. Engines older than 1.40.8
+        // lack the contact velocities and impulse controls the ghost filter and cap need,
+        // so they keep the existing 2x diagonal-only bias unchanged.
+        internal static float EvaluateCubeImpactInverseInertiaScale(Vector3 localAngularVelocity)
+        {
+            if (localAngularVelocity.sqrMagnitude < 4f * Mathf.PI * Mathf.PI)
+                return 1f;
+#if PRE_V1_40_8
+            return IsCubeCornerSpin(active: true, localAngularVelocity)
+                ? 0.5f
+                : 1f;
+#else
+            return 0.125f;
+#endif
+        }
+
+        // Substeps bound each step's rotation to twenty degrees; spheres always contribute one.
+        internal static int EvaluateCubePhysicsSubsteps(float angularSpeed, float deltaTime)
+            => Mathf.Max(1, Mathf.CeilToInt(angularSpeed * deltaTime / (Mathf.PI / 9f)));
+
+        // Intentionally limits non-floor speculative reach to the translational closing budget so a
+        // spinning collider's broadphase envelope cannot act as remote solid contacts. Very fast
+        // angular-only grazes between steps are not continuously swept; this is not angular CCD.
+        internal static bool ShouldIgnoreCubeSpeculativeContact(
+            float separation,
+            float linearClosingSpeed,
+            float deltaTime,
+            float contactOffset)
+            => separation > contactOffset + (Mathf.Max(0f, linearClosingSpeed) * deltaTime);
+
+        internal static float EvaluateCubeImpactMaxImpulse(float mass, float linearClosingSpeed, float restitution, int contactCount)
+            => mass * (CubeImpactMaximumKickSpeed + ((1f + restitution) * Mathf.Max(0f, linearClosingSpeed))) / contactCount;
 
         internal static Vector3 EvaluatePivotSwingDampingForce(Vector3 pivotToCenter, Vector3 angularVelocity, float forceScale)
             => -forceScale * Vector3.Cross(angularVelocity, pivotToCenter);

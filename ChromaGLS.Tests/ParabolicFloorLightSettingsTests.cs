@@ -111,18 +111,18 @@ internal sealed class ParabolicFloorLightSettingsTests
         AssertConfigDefault(config, "ParabolicFloorLightEnabled", true, ignoreType);
         AssertConfigDefault(config, "ParabolicFloorLightBrightness", 0.43f, ignoreType);
         AssertConfigDefault(config, "ParabolicFloorLightRed", 0f, ignoreType);
-        AssertConfigDefault(config, "ParabolicFloorLightGreen", 0.86f, ignoreType);
-        AssertConfigDefault(config, "ParabolicFloorLightBlue", 2.47f, ignoreType);
+        AssertConfigDefault(config, "ParabolicFloorLightGreen", 1f, ignoreType);
+        AssertConfigDefault(config, "ParabolicFloorLightBlue", 2.5f, ignoreType);
         AssertConfigDefault(config, "ParabolicFloorLightWidthScale", 3.2f, ignoreType);
         AssertConfigDefault(config, "ParabolicFloorLightOffsetX", 0f, ignoreType);
         AssertConfigDefault(config, "ParabolicFloorLightOffsetZ", 0f, ignoreType);
         AssertConfigDefault(config, "ParabolicFloorLightRotation", 0f, ignoreType);
         AssertConfigDefault(config, "ParabolicFloorLightLightWidthScale", 1f, ignoreType);
-        AssertConfigDefault(config, "ParabolicFloorLightBloomWidthScale", 0.96f, ignoreType);
-        AssertConfigDefault(config, "ParabolicFloorLightBloomBrightness", 1.25f, ignoreType);
-        AssertConfigDefault(config, "ParabolicFloorLightHdrGlowThreshold", 1.3f, ignoreType);
-        AssertConfigDefault(config, "ParabolicFloorLightHdrGlowWidthScale", 0.04f, ignoreType);
-        AssertConfigDefault(config, "ParabolicFloorLightHdrGlowBrightness", 4f, ignoreType);
+        AssertConfigDefault(config, "ParabolicFloorLightBloomWidthScale", 0.6f, ignoreType);
+        AssertConfigDefault(config, "ParabolicFloorLightBloomBrightness", 1.42f, ignoreType);
+        AssertConfigDefault(config, "ParabolicFloorLightHdrGlowThreshold", 1.8f, ignoreType);
+        AssertConfigDefault(config, "ParabolicFloorLightHdrGlowWidthScale", 0.20f, ignoreType);
+        AssertConfigDefault(config, "ParabolicFloorLightHdrGlowBrightness", 2f, ignoreType);
     }
 
     [Test]
@@ -136,7 +136,7 @@ internal sealed class ParabolicFloorLightSettingsTests
 
         object config = Activator.CreateInstance(configType, nonPublic: true)!;
         object fromConfig = settingsType.GetMethod("FromConfig", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!.Invoke(null, [config])!;
-        AssertSettings(fromConfig, 0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 0.96f, 1.25f, 1.3f, 0.04f, 4f, "a fresh config must resolve to the requested defaults");
+        AssertSettings(fromConfig, 0.43f, 0f, 1f, 2.5f, 3.2f, 0f, 0f, 0f, 1f, 0.6f, 1.42f, 1.8f, 0.20f, 2f, "a fresh config must resolve to the floor defaults");
 
         ConstructorInfo? ctor = settingsType.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
             .FirstOrDefault(candidate => candidate.GetParameters().Length == 14);
@@ -177,7 +177,7 @@ internal sealed class ParabolicFloorLightSettingsTests
         _recordedSettings.Clear();
         Invoke(session, "Cancel");
         Assert.That(_recordedSettings.Count, Is.EqualTo(1), "cancel must push the saved snapshot back through preview");
-        AssertSettings(_recordedSettings[0], 0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 0.96f, 1.25f);
+        AssertSettings(_recordedSettings[0], 0.43f, 0f, 1f, 2.5f, 3.2f, 0f, 0f, 0f, 1f, 0.6f, 1.42f, 1.8f, 0.20f, 2f);
         Invoke(session, "Cancel");
         Assert.That(_recordedSettings.Count, Is.EqualTo(1), "a second cancel while closed must not fire again");
     }
@@ -190,13 +190,13 @@ internal sealed class ParabolicFloorLightSettingsTests
         config.GetType().GetProperty("ParabolicFloorLightBloomWidthScale")!.SetValue(config, 0.5f);
         config.GetType().GetProperty("ParabolicFloorLightBloomBrightness")!.SetValue(config, 2f);
         Invoke(session, "Open");
-        AssertSettings(ReadSettings(session, "Working"), 0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 0.5f, 2f, 1.3f, 0.04f, 4f, "reopening must read the saved bloom values");
+        AssertSettings(ReadSettings(session, "Working"), 0.43f, 0f, 1f, 2.5f, 3.2f, 0f, 0f, 0f, 1f, 0.5f, 2f, 1.8f, 0.20f, 2f, "reopening must read the saved bloom values");
 
         Invoke(session, "Preview", NewSettings(settingsType, 0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 3f, 7f));
         _recordedSettings.Clear();
         Invoke(session, "Cancel");
         Assert.That(_recordedSettings.Count, Is.EqualTo(1), "cancel must push the saved snapshot back through preview");
-        AssertSettings(_recordedSettings[0], 0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 0.5f, 2f, 1.3f, 0.04f, 4f, "cancel must restore the saved bloom values, not the defaults");
+        AssertSettings(_recordedSettings[0], 0.43f, 0f, 1f, 2.5f, 3.2f, 0f, 0f, 0f, 1f, 0.5f, 2f, 1.8f, 0.20f, 2f, "cancel must restore the saved bloom values, not the defaults");
         AssertConfigValue(config, "ParabolicFloorLightBloomWidthScale", 0.5f);
         AssertConfigValue(config, "ParabolicFloorLightBloomBrightness", 2f);
     }
@@ -250,19 +250,19 @@ internal sealed class ParabolicFloorLightSettingsTests
         Assert.That(reset, Is.Not.Null, "the controller must bind the parabola-reset action");
         ((MethodInfo)reset).Invoke(controller, null);
 
-        AssertSettings(ReadSettings(session, "Working"), 0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 0.96f, 1.25f, 1.3f, 0.04f, 4f, "reset must preview the shipped defaults");
+        AssertSettings(ReadSettings(session, "Working"), 0.43f, 0f, 1f, 2.5f, 3.2f, 0f, 0f, 0f, 1f, 0.6f, 1.42f, 1.8f, 0.20f, 2f, "reset must preview the shipped defaults");
         Assert.That(IsEditing(session), Is.True, "reset leaves the session editing and the modal open");
         foreach ((string name, float value) in DistinctSavedValues)
             AssertConfigValue(config, name, value);
 
         (string UIName, float Slider)[] defaults =
         [
-            ("parabola-brightness", 0.215f), ("parabola-red", 0f), ("parabola-green", 0.43f),
-            ("parabola-blue", 0.5f + (0.5f * Mathf.Sqrt(1.47f / 9f))), ("parabola-width", Mathf.Sqrt((3.2f - 0.5f) / 7.5f)),
-            ("parabola-light-width", Mathf.Sqrt(0.999f / 3.999f)), ("parabola-bloom-width", Mathf.Sqrt(0.24f)),
-            ("parabola-bloom-brightness", 0.5f + (0.5f * Mathf.Sqrt(0.25f / 9f))),
-            ("parabola-hdr-glow-threshold", 0.5f + (0.5f * Mathf.Sqrt(0.3f / 9f))), ("parabola-hdr-glow-width", Mathf.Sqrt(0.04f)),
-            ("parabola-hdr-glow-brightness", 0.5f + (0.5f * Mathf.Sqrt(3f / 9f))),
+            ("parabola-brightness", 0.215f), ("parabola-red", 0f),
+            ("parabola-green", 0.5f), ("parabola-blue", 0.5f + (0.5f * Mathf.Sqrt(1.5f / 19f))), ("parabola-width", Mathf.Sqrt((3.2f - 0.5f) / 7.5f)),
+            ("parabola-light-width", Mathf.Sqrt((1f - 0.001f) / 3.999f)), ("parabola-bloom-width", Mathf.Sqrt(0.15f)),
+            ("parabola-bloom-brightness", 0.5f + (0.5f * Mathf.Sqrt(0.42f / 9f))),
+            ("parabola-hdr-glow-threshold", 0.5f + (0.5f * Mathf.Sqrt(0.8f / 9f))), ("parabola-hdr-glow-width", Mathf.Sqrt(0.20f)),
+            ("parabola-hdr-glow-brightness", 0.5f + (0.5f * Mathf.Sqrt(1f / 9f))),
             ("parabola-offset-z", 0f), ("parabola-offset-x", 0f), ("parabola-rotation", 0f),
         ];
         foreach ((string uiName, float slider) in defaults)
@@ -300,12 +300,12 @@ internal sealed class ParabolicFloorLightSettingsTests
         ((MethodInfo)FindUIAction(controller.GetType(), "parabola-save")!).Invoke(controller, null);
 
         Assert.That(IsEditing(session), Is.False, "save after reset must close the session");
-        AssertSettings(DefinitionSettings(ReadPersistedDefinition(config)), 0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 0.96f, 1.25f, 1.3f, 0.04f, 4f, "reset must persist all fourteen values in the saved light collection");
+        AssertSettings(DefinitionSettings(ReadPersistedDefinition(config)), 0.43f, 0f, 1f, 2.5f, 3.2f, 0f, 0f, 0f, 1f, 0.6f, 1.42f, 1.8f, 0.20f, 2f, "reset must persist all fourteen values in the saved light collection");
         foreach ((string name, float value) in DistinctSavedValues)
             AssertConfigValue(config, name, value);
 
         Invoke(session, "OpenExisting", "legacy-parabola");
-        AssertSettings(ReadSettings(session, "Working"), 0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 0.96f, 1.25f, 1.3f, 0.04f, 4f, "reopening after reset+save must read the defaults");
+        AssertSettings(ReadSettings(session, "Working"), 0.43f, 0f, 1f, 2.5f, 3.2f, 0f, 0f, 0f, 1f, 0.6f, 1.42f, 1.8f, 0.20f, 2f, "reopening after reset+save must read the defaults");
     }
 
     [Test]
@@ -548,7 +548,7 @@ internal sealed class ParabolicFloorLightSettingsTests
         float halfWidth = 0.0875f;
         float narrowReach = 1.5f;
         float gain = Mathf.Sqrt(8.7f);
-        float[] nativeTable = { 255f / 255f, 255f / 255f, 255f / 255f, 240f / 255f, 212f / 255f, 184f / 255f, 159f / 255f, 134f / 255f, 112f / 255f, 93f / 255f, 73f / 255f, 55f / 255f, 39f / 255f, 25f / 255f, 13f / 255f, 5f / 255f, 0f };
+        float[] nativeTable = { 1.000000f, 0.878906f, 0.765625f, 0.660156f, 0.562500f, 0.472656f, 0.390625f, 0.316406f, 0.250000f, 0.191406f, 0.140625f, 0.097656f, 0.062500f, 0.035156f, 0.015625f, 0.003906f, 0.000000f };
 
         for (int station = 0; station < 97; station++)
         {
@@ -886,7 +886,7 @@ internal sealed class ParabolicFloorLightSettingsTests
 
         Dictionary<string, float> expected = new()
         {
-            ["ParabolicFloorLightBrightness"] = 3.25f, ["ParabolicFloorLightRed"] = 1f, ["ParabolicFloorLightGreen"] = 3.25f,
+            ["ParabolicFloorLightBrightness"] = 3.25f, ["ParabolicFloorLightRed"] = 1f, ["ParabolicFloorLightGreen"] = 5.75f,
             ["ParabolicFloorLightBlue"] = 0.5f, ["ParabolicFloorLightWidthScale"] = 2.375f, ["ParabolicFloorLightLightWidthScale"] = 2.2504375f,
             ["ParabolicFloorLightBloomWidthScale"] = 2.25f, ["ParabolicFloorLightBloomBrightness"] = 3.25f,
             ["ParabolicFloorLightHdrGlowThreshold"] = 3.25f, ["ParabolicFloorLightHdrGlowWidthScale"] = 0.25f, ["ParabolicFloorLightHdrGlowBrightness"] = 3.25f,
@@ -925,7 +925,7 @@ internal sealed class ParabolicFloorLightSettingsTests
         JProperty? lightsJson = json.Descendants().OfType<JProperty>().FirstOrDefault(candidate => candidate.Name == "MenuLightsJson");
         Assert.That(lightsJson, Is.Not.Null, "the generated config must serialize the saved light collection");
         Assert.That(lightsJson!.Value.Value<string>(), Is.EqualTo(GetConfigProperty(config, "MenuLightsJson")));
-        Assert.That(JArray.Parse(lightsJson.Value.Value<string>()!).Count, Is.EqualTo(1));
+        Assert.That(JArray.Parse(lightsJson.Value.Value<string>()!).Count, Is.EqualTo(2));
 
         Assert.That(json.Descendants().OfType<JProperty>().Any(candidate => candidate.Name == "Enabled"), Is.True, "unrelated persisted toggles must survive in the same file");
 
@@ -946,7 +946,7 @@ internal sealed class ParabolicFloorLightSettingsTests
         object freshController = CreateController(fresh, CreateService(fresh));
         object freshSession = uiType.GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(freshController)!;
         Invoke(freshSession, "OpenExisting", "legacy-parabola");
-        AssertSettings(ReadSettings(freshSession, "Working"), 3.25f, 1f, 3.25f, 0.5f, 2.375f, -2.5f, 1.5f, 90f, 2.2504375f, 2.25f, 3.25f, 3.25f, 0.25f, 3.25f, "a fresh session must open the persisted values");
+        AssertSettings(ReadSettings(freshSession, "Working"), 3.25f, 1f, 5.75f, 0.5f, 2.375f, -2.5f, 1.5f, 90f, 2.2504375f, 2.25f, 3.25f, 3.25f, 0.25f, 3.25f, "a fresh session must open the persisted values");
 
         string beforeCancel = (string)GetConfigProperty(fresh, "MenuLightsJson");
         ((PropertyInfo)FindUIValue(uiType, "parabola-brightness")!).SetValue(freshController, 0.95f);
@@ -955,7 +955,7 @@ internal sealed class ParabolicFloorLightSettingsTests
         Assert.That(GetConfigProperty(fresh, "MenuLightsJson"), Is.EqualTo(beforeCancel), "cancel must preserve the persisted collection");
         AssertSavedValues(fresh);
         Invoke(freshSession, "OpenExisting", "legacy-parabola");
-        AssertSettings(ReadSettings(freshSession, "Working"), 3.25f, 1f, 3.25f, 0.5f, 2.375f, -2.5f, 1.5f, 90f, 2.2504375f, 2.25f, 3.25f, 3.25f, 0.25f, 3.25f, "cancel and reopen must restore all fourteen persisted values");
+        AssertSettings(ReadSettings(freshSession, "Working"), 3.25f, 1f, 5.75f, 0.5f, 2.375f, -2.5f, 1.5f, 90f, 2.2504375f, 2.25f, 3.25f, 3.25f, 0.25f, 3.25f, "cancel and reopen must restore all fourteen persisted values");
         Invoke(controller, "Dispose");
         Invoke(freshController, "Dispose");
 
@@ -1151,8 +1151,9 @@ internal sealed class ParabolicFloorLightSettingsTests
             ("parabola-offset-z", "Forward/back", -10f, 10f),
             ("parabola-offset-x", "Left/right", -10f, 10f),
             ("parabola-rotation", "Yaw", -180f, 180f),
-            ("light-height", "Height", -2f, 10f),
-            ("light-depth", "Depth", 0.001f, 2f),
+            ("light-height", "Up/down", 0f, 1f),
+            ("light-depth", "Underside depth", 0.001f, 2f),
+            ("floor-height", "Floor light height", 0.001f, 2f),
             ("light-size", "Side length / diameter", 0.1f, 10f),
             ("light-end-length", "End length (0 = automatic)", 0f, 20f),
             ("light-fade-start", "Fade start", 0f, 0.95f),
@@ -1351,7 +1352,7 @@ internal sealed class ParabolicFloorLightSettingsTests
         Invoke(session, "OpenExisting", "legacy-parabola");
 
         PropertyInfo brightness = controller.GetType().GetProperty("ParabolaBrightness", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        Assert.That((float)brightness.GetValue(controller)!, Is.EqualTo(0.215f).Within(0.001f), "the saved 0.43 brightness must display as slider 0.215");
+        Assert.That((float)brightness.GetValue(controller)!, Is.EqualTo(0.215f).Within(0.001f), "the saved .43 brightness must display as slider .215");
         brightness.SetValue(controller, 0.75f);
         Assert.That(SettingsField(ReadSettings(session, "Working"), "Brightness"), Is.EqualTo(3.25f).Within(0.001f), "slider 0.75 must preview intensity 3.25");
 
@@ -1370,7 +1371,7 @@ internal sealed class ParabolicFloorLightSettingsTests
 
         PropertyInfo bloomWidth = controller.GetType().GetProperty("ParabolaBloomWidth", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Assert.That(bloomWidth, Is.Not.Null, "the controller must bind the bloom-width slider");
-        Assert.That((float)bloomWidth.GetValue(controller)!, Is.EqualTo(Mathf.Sqrt(0.96f / 4f)).Within(0.001f), "saved bloom width .96 must display at its slider position");
+        Assert.That((float)bloomWidth.GetValue(controller)!, Is.EqualTo(Mathf.Sqrt(0.6f / 4f)).Within(0.001f), "saved bloom width .6 must display at its slider position");
         bloomWidth.SetValue(controller, 0f);
         Assert.That(SettingsField(ReadSettings(session, "Working"), "BloomWidthScale"), Is.EqualTo(0f).Within(0.001f));
         bloomWidth.SetValue(controller, 0.5f);
@@ -1380,7 +1381,7 @@ internal sealed class ParabolicFloorLightSettingsTests
 
         PropertyInfo bloomBrightness = controller.GetType().GetProperty("ParabolaBloomBrightness", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Assert.That(bloomBrightness, Is.Not.Null, "the controller must bind the bloom-brightness slider");
-        Assert.That((float)bloomBrightness.GetValue(controller)!, Is.EqualTo(0.5f + (0.5f * Mathf.Sqrt(0.25f / 9f))).Within(0.001f), "saved bloom brightness 1.25 must display at its slider position");
+        Assert.That((float)bloomBrightness.GetValue(controller)!, Is.EqualTo(0.5f + (0.5f * Mathf.Sqrt(0.42f / 9f))).Within(0.001f), "saved bloom brightness 1.42 must display at its slider position");
         bloomBrightness.SetValue(controller, 0f);
         Assert.That(SettingsField(ReadSettings(session, "Working"), "BloomBrightness"), Is.EqualTo(0f).Within(0.001f));
         bloomBrightness.SetValue(controller, 0.5f);
@@ -1393,7 +1394,7 @@ internal sealed class ParabolicFloorLightSettingsTests
         FieldInfo loading = controller.GetType().GetField("_loading", BindingFlags.Instance | BindingFlags.NonPublic)!;
         PropertyInfo hdrThreshold = controller.GetType().GetProperty("ParabolaHdrGlowThreshold", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Assert.That(hdrThreshold, Is.Not.Null, "the controller must bind the inner-threshold slider");
-        Assert.That((float)hdrThreshold.GetValue(controller)!, Is.EqualTo(0.5f + (0.5f * Mathf.Sqrt(0.3f / 9f))).Within(0.001f), "saved threshold 1.3 must display at its slider position");
+        Assert.That((float)hdrThreshold.GetValue(controller)!, Is.EqualTo(0.5f + (0.5f * Mathf.Sqrt(0.8f / 9f))).Within(0.001f), "saved threshold 1.8 must display at its slider position");
         hdrThreshold.SetValue(controller, 0.5f);
         Assert.That(SettingsField(ReadSettings(session, "Working"), "HdrGlowThreshold"), Is.EqualTo(1f).Within(0.001f));
         hdrThreshold.SetValue(controller, 0.75f);
@@ -1401,7 +1402,7 @@ internal sealed class ParabolicFloorLightSettingsTests
 
         PropertyInfo hdrWidth = controller.GetType().GetProperty("ParabolaHdrGlowWidth", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Assert.That(hdrWidth, Is.Not.Null, "the controller must bind the inner-width slider");
-        Assert.That((float)hdrWidth.GetValue(controller)!, Is.EqualTo(Mathf.Sqrt(0.04f)).Within(0.001f), "saved inner width .04 must display at its slider position");
+        Assert.That((float)hdrWidth.GetValue(controller)!, Is.EqualTo(Mathf.Sqrt(0.2f)).Within(0.001f), "saved inner width .2 must display at its slider position");
         hdrWidth.SetValue(controller, 0.5f);
         Assert.That(SettingsField(ReadSettings(session, "Working"), "HdrGlowWidthScale"), Is.EqualTo(0.25f).Within(0.001f));
         hdrWidth.SetValue(controller, 1f);
@@ -1443,18 +1444,18 @@ internal sealed class ParabolicFloorLightSettingsTests
     {
         ["ParabolicFloorLightBrightness"] = 0.43f,
         ["ParabolicFloorLightRed"] = 0f,
-        ["ParabolicFloorLightGreen"] = 0.86f,
-        ["ParabolicFloorLightBlue"] = 2.47f,
+        ["ParabolicFloorLightGreen"] = 1f,
+        ["ParabolicFloorLightBlue"] = 2.5f,
         ["ParabolicFloorLightWidthScale"] = 3.2f,
         ["ParabolicFloorLightOffsetX"] = 0f,
         ["ParabolicFloorLightOffsetZ"] = 0f,
         ["ParabolicFloorLightRotation"] = 0f,
         ["ParabolicFloorLightLightWidthScale"] = 1f,
-        ["ParabolicFloorLightBloomWidthScale"] = 0.96f,
-        ["ParabolicFloorLightBloomBrightness"] = 1.25f,
-        ["ParabolicFloorLightHdrGlowThreshold"] = 1.3f,
-        ["ParabolicFloorLightHdrGlowWidthScale"] = 0.04f,
-        ["ParabolicFloorLightHdrGlowBrightness"] = 4f,
+        ["ParabolicFloorLightBloomWidthScale"] = 0.6f,
+        ["ParabolicFloorLightBloomBrightness"] = 1.42f,
+        ["ParabolicFloorLightHdrGlowThreshold"] = 1.8f,
+        ["ParabolicFloorLightHdrGlowWidthScale"] = 0.20f,
+        ["ParabolicFloorLightHdrGlowBrightness"] = 2f,
     };
 
     private static readonly List<object> _recordedSettings = new();
@@ -1563,8 +1564,14 @@ internal sealed class ParabolicFloorLightSettingsTests
             [config],
             null)!;
         var definitions = (System.Collections.IList)storeType.GetProperty("Lights", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
-        Assert.That(definitions.Count, Is.EqualTo(1), "the migrated parabola must remain the only saved light");
-        return definitions[0]!;
+        foreach (object? definition in definitions)
+        {
+            if ((string)definition!.GetType().GetProperty("Id", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(definition)! == "legacy-parabola")
+                return definition;
+        }
+
+        Assert.Fail("the saved legacy parabola must remain in the collection");
+        return null!;
     }
 
     private static object DefinitionSettings(object working)

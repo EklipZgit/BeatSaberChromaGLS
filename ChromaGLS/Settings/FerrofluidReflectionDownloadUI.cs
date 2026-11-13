@@ -31,6 +31,7 @@ namespace ChromaGLS.Settings
         private readonly FerrofluidReflectionPackService _service;
         private RectTransform? _requestedParent;
         private bool _disposed;
+        private bool _menuActive = true;
         private bool _modalShown;
         private ModalView? _modal;
         private GameObject? _modalRoot;
@@ -72,6 +73,15 @@ namespace ChromaGLS.Settings
             remove => _service.QualityChanged -= value;
         }
 
+        /// <summary>Forwarded service state event/flag so the settings tab can hide the manual entry point when nothing needs downloading.</summary>
+        internal event Action? StatusChanged
+        {
+            add => _service.StatusChanged += value;
+            remove => _service.StatusChanged -= value;
+        }
+
+        internal bool NeedsDownload => _service.NeedsDownload;
+
         /// <summary>Manual dropdown selection; remembers the visible parent the consent modal opens on.</summary>
         internal void RequestQuality(ReflectionQuality quality, RectTransform parent)
         {
@@ -79,9 +89,21 @@ namespace ChromaGLS.Settings
             _service.RequestQuality(quality);
         }
 
+        /// <summary>Menu exit hides and destroys the modal; an in-flight prompt cannot open it in a map.</summary>
+        internal void SetMenuActive(bool active)
+        {
+            _menuActive = active;
+            if (!active)
+            {
+                Hide();
+                _requestedParent = null;
+                DestroyModal();
+            }
+        }
+
         private void HandleDownloadPromptRequested()
         {
-            if (_disposed)
+            if (_disposed || !_menuActive)
                 return;
             RectTransform parent = _requestedParent != null ? _requestedParent : (RectTransform)_mainMenu.transform;
             Open(parent);
@@ -101,7 +123,7 @@ namespace ChromaGLS.Settings
 
         internal void Open(RectTransform parent)
         {
-            if (_disposed)
+            if (_disposed || !_menuActive)
                 return;
             EnsureModal(parent);
             if (_modal != null)
@@ -146,7 +168,7 @@ namespace ChromaGLS.Settings
 
         private void TryAutoOffer()
         {
-            if (_disposed || _modalShown || !_mainMenu.isActivated || !_service.TryOfferDownload())
+            if (_disposed || !_menuActive || _modalShown || !_mainMenu.isActivated || !_service.TryOfferDownload())
                 return;
             Open((RectTransform)_mainMenu.transform);
         }

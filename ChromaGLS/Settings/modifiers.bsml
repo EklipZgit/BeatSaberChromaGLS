@@ -1,23 +1,25 @@
 <bg>
-  <settings-container child-control-width='true' child-expand-width='true' size-delta-y='-15'>
+  <settings-container id='chroma-menu-settings' child-control-width='true' child-expand-width='true' size-delta-y='0' anchored-position-y='0' child-align='UpperCenter' child-control-height='true' child-expand-height='false'>
     <bool-setting text='Enable ChromaGLS' value='enabled' apply-on-change='true'
                       hover-hint='Enable or disable ChromaGLS custom colors immediately.'/>
     <bool-setting text='Enable Ferrofluid Info Button' value='ferrofluid-border-enabled' apply-on-change='true'
                       hover-hint='Disable to remove the ferrofluid ChromaGLS map indicator around the info button.'/>
-    <bool-setting text='Enable Ferrofluid Cube' value='ferrofluid-cube-enabled' apply-on-change='true'
-                      hover-hint='Enable a cube of ferrofluid on the floor as a fidget toy in the main menu.'/>
-    <bool-setting text='Enable Ferrofluid Sphere' value='ferrofluid-sphere-enabled' apply-on-change='true'
-                      hover-hint='Enable a sphere of ferrofluid on the floor as a fidget toy in the main menu.'/>
-    <bool-setting text='Enable Fluid Cube' value='fluid-cube-enabled' apply-on-change='true'
-                      hover-hint='Add an extra spike-free fluid cube with the same physics on the left side behind the originals.'/>
-    <bool-setting text='Enable Fluid Sphere' value='fluid-sphere-enabled' apply-on-change='true'
-                      hover-hint='Add an extra spike-free fluid sphere with the same physics on the right side behind the originals.'/>
-    <primary-button id='ferro-tweak-button' text='TWEAK FERRO' on-click='ferro-open' preferred-width='30' preferred-height='8' font-size='4'/>
-    <primary-button id='reflection-maps-button' text='REFLECTION MAPS' on-click='reflection-maps-open' preferred-width='30' preferred-height='8' font-size='4'/>
+    <horizontal min-height='4' preferred-height='4' flexible-height='0'/>
+    <text text='Main Menu Tweaks' bold='true' align='Left' font-size='4.5' preferred-height='8' min-height='8' flexible-height='0'/>
     <bool-setting id='menu-floor-light-setting' text='Menu lights' value='parabola-light-enabled' apply-on-change='true'
                       hover-hint='Enable the glowing floor light behind you in the main menu.'>
           <primary-button id='menu-floor-light-tweak' text='Tweak' on-click='parabola-open' preferred-width='18' preferred-height='6' horizontal-fit='Unconstrained' vertical-fit='Unconstrained' font-size='3'/>
         </bool-setting>
+    <bool-setting text='Enable Ferrofluid Fidget Cube' value='ferrofluid-cube-enabled' apply-on-change='true'
+                      hover-hint='Enable a cube of ferrofluid on the floor as a fidget toy in the main menu.'/>
+    <bool-setting text='Enable Ferrofluid Fidget Sphere' value='ferrofluid-sphere-enabled' apply-on-change='true'
+                      hover-hint='Enable a sphere of ferrofluid on the floor as a fidget toy in the main menu.'/>
+    <bool-setting text='Enable Fluid Fidget Cube' value='fluid-cube-enabled' apply-on-change='true'
+                      hover-hint='Add an extra spike-free fluid cube with the same physics on the left side behind the originals.'/>
+    <bool-setting text='Enable Fluid Fidget Sphere' value='fluid-sphere-enabled' apply-on-change='true'
+                      hover-hint='Add an extra spike-free fluid sphere with the same physics on the right side behind the originals.'/>
+    <primary-button id='ferro-tweak-button' text='TWEAK FERRO' on-click='ferro-open' preferred-width='30' preferred-height='8' font-size='4'/>
+    <primary-button id='reflection-maps-button' text='REFLECTION MAPS' on-click='reflection-maps-open' preferred-width='30' preferred-height='8' font-size='4'/>
   </settings-container>
   <horizontal id='ferrofluid-preview-anchor' preferred-width='1' preferred-height='1'/>
 </bg>

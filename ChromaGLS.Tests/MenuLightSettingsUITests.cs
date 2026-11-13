@@ -157,7 +157,7 @@ public class MenuLightSettingsUITests
         Assert.That((float)savedB.GetType().GetProperty("RotationX", Flags)!.GetValue(savedB)!, Is.EqualTo(35f));
         Assert.That((float)savedB.GetType().GetProperty("RotationZ", Flags)!.GetValue(savedB)!, Is.EqualTo(-20f));
         object appearance = savedB.GetType().GetProperty("Appearance", Flags)!.GetValue(savedB)!;
-        Assert.That((float)appearance.GetType().GetField("Blue", Flags)!.GetValue(appearance)!, Is.EqualTo(3.25f).Within(0.0001f));
+        Assert.That((float)appearance.GetType().GetField("Blue", Flags)!.GetValue(appearance)!, Is.EqualTo(5.75f).Within(0.0001f));
         float[] quaternion = new[] { "QuaternionX", "QuaternionY", "QuaternionZ", "QuaternionW" }
             .Select(name => (float)savedB.GetType().GetProperty(name, Flags)!.GetValue(savedB)!)
             .ToArray();

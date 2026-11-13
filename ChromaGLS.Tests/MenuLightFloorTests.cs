@@ -35,13 +35,13 @@ public class MenuLightFloorTests
         object meshes = Geometry(definition, 2f);
         Vector3 origin = Field<Vector3>(meshes, "Position");
         Quaternion rotation = Field<Quaternion>(meshes, "Rotation");
-        Assert.That(origin.y, Is.EqualTo(2.02f).Within(1e-5f));
+        Assert.That(origin.y, Is.EqualTo(4f).Within(1e-5f));
         Assert.That(origin.x, Is.EqualTo(.25f).Within(1e-5f));
         Assert.That(origin.z, Is.EqualTo(.4f).Within(1e-5f));
         Assert.That(Vector3.Distance(rotation * Vector3.up, Vector3.up), Is.LessThan(1e-5f));
         Assert.That(Vector3.Distance(rotation * Vector3.forward, Quaternion.AngleAxis(35f, Vector3.up) * Vector3.forward), Is.LessThan(1e-5f));
         Vector3[] core = Vertices(meshes, "Core");
-        Assert.That(core.Min(vertex => vertex.y) + origin.y, Is.EqualTo(1.82f).Within(1e-5f));
+        Assert.That(core.Min(vertex => vertex.y) + origin.y, Is.EqualTo(2f).Within(1e-5f));
         Vector3[] glow = Vertices(meshes, "Glow");
         Assert.That(glow, Is.Not.Empty);
         foreach (Vector3 vertex in glow)
@@ -80,12 +80,13 @@ public class MenuLightFloorTests
         Set(definition, "RotationY", 42f);
         Invoke(store, "Upsert", definition);
         object saved = Lights(New("MenuLightStore", config))[0]!;
-        Assert.That(Get(saved, "Height"), Is.EqualTo(.02f));
+        Assert.That(Get(saved, "Height"), Is.EqualTo(2f));
+        Assert.That(Get(saved, "Depth"), Is.EqualTo(2f));
         Assert.That(Get(saved, "RotationX"), Is.EqualTo(0f));
         Assert.That(Get(saved, "RotationZ"), Is.EqualTo(0f));
         Assert.That(Get(saved, "RotationY"), Is.EqualTo(42f));
         Assert.That(Get(definition, "Height"), Is.EqualTo(9f));
-        Assert.That(Get(saved, "Appearance"), Is.EqualTo(Get(Default("Parabola"), "Appearance")));
+        Assert.That(Get(saved, "Appearance"), Is.EqualTo(Get(Default("Floor"), "Appearance")));
     }
 
     [TestCase(.006f, false, "Floor")]
@@ -95,6 +96,7 @@ public class MenuLightFloorTests
     public void OnlyTheKnownHorizontalDefaultMigrates(float height, bool tilted, string expected)
     {
         object definition = Default("Parabola");
+        Horizontalize(definition);
         Set(definition, "Id", "legacy-parabola");
         Set(definition, "Height", height);
         if (tilted)
@@ -104,7 +106,9 @@ public class MenuLightFloorTests
         }
         object saved = Lights(New("MenuLightStore", Config(JsonConvert.SerializeObject(new[] { definition }))))[0]!;
         Assert.That(Get(saved, "Type").ToString(), Is.EqualTo(expected));
-        Assert.That(Get(saved, "Height"), Is.EqualTo(expected == "Floor" ? .02f : height));
+        Assert.That(Get(saved, "Height"), Is.EqualTo(height));
+        if (expected == "Floor")
+            Assert.That(Get(saved, "Depth"), Is.EqualTo(height), "floor depth follows height so the bottom stays on the floor");
         if (tilted)
             Assert.That(Get(saved, "QuaternionX"), Is.EqualTo(.5f), "quaternion tilt matters even if slider values are zero");
     }
@@ -131,18 +135,18 @@ public class MenuLightFloorTests
         Set(ui, "TypeValue", Kind("Floor"));
         Set(ui, "HeightValue", 8f);
         Set(ui, "RotationZValue", 32f);
-        Assert.That(Get(ui, "HeightValue"), Is.EqualTo(.02f));
+        Assert.That(Get(ui, "HeightValue"), Is.EqualTo(Mathf.Pow(2f / 7f, 1f / 3f)).Within(1e-4f));
         Assert.That(Get(ui, "RotationXValue"), Is.EqualTo(0f));
         Assert.That(Get(ui, "RotationZValue"), Is.EqualTo(0f));
         Set(ui, "RotationYValue", 28f);
         Assert.That(Get(ui, "RotationYValue"), Is.EqualTo(28f));
         Invoke(ui, "HandleReset");
         Assert.That(Get(ui, "TypeValue"), Is.EqualTo(Kind("Floor")));
-        Assert.That(Get(ui, "HeightValue"), Is.EqualTo(.02f));
+        Assert.That(Get(ui, "HeightValue"), Is.EqualTo(Mathf.Pow(0.02f / 7f, 1f / 3f)).Within(1e-4f));
         Set(ui, "TypeValue", Kind("Parabola"));
-        Set(ui, "HeightValue", 2f);
+        Set(ui, "HeightValue", Mathf.Pow(2f / 7f, 1f / 3f));
         Set(ui, "RotationXValue", 20f);
-        Assert.That(Get(ui, "HeightValue"), Is.EqualTo(2f));
+        Assert.That(Get(ui, "HeightValue"), Is.EqualTo(Mathf.Pow(2f / 7f, 1f / 3f)).Within(1e-4f));
         Assert.That(Get(ui, "RotationXValue"), Is.EqualTo(20f));
         Invoke(ui, "HandleCancel");
         Assert.That(Lights(Get(light, "Store")), Is.Empty);
@@ -161,7 +165,10 @@ public class MenuLightFloorTests
         Color[] colors = Field<Color[]>(core, "Colors");
         Vector2[] uv = Field<Vector2[]>(core, "UV");
         object parabola = Default("Parabola");
+        Horizontalize(parabola);
         Set(parabola, "Height", .02f);
+        Set(parabola, "Depth", .02f);
+        Set(parabola, "FadeStart", Get(floor, "FadeStart"));
         Set(parabola, "Appearance", Get(floor, "Appearance"));
         object original = Field<object>(Geometry(parabola), "Core");
         Vector3[] originalVertices = Field<Vector3[]>(original, "Vertices");
@@ -203,7 +210,7 @@ public class MenuLightFloorTests
                 Assert.That(colors[index].r, Is.EqualTo(expected.r * factor).Within(1e-6f));
                 Assert.That(colors[index].g, Is.EqualTo(expected.g * factor).Within(1e-6f));
                 Assert.That(colors[index].b, Is.EqualTo(expected.b * factor).Within(1e-6f));
-                Assert.That(colors[index].a, Is.EqualTo(expected.a));
+                Assert.That(colors[index].a, Is.EqualTo(expected.a * (factor == 1.44f ? 1.3f : 1f)).Within(1e-6f));
                 Assert.That(vertices[index], Is.EqualTo(originalVertices[originalIndex]));
                 Assert.That(uv[index], Is.EqualTo(originalUv[originalIndex]));
             }
@@ -252,6 +259,16 @@ public class MenuLightFloorTests
         object?[] arguments = { enclosure, Vector3.zero, Vector3.forward, definition, null };
         Assert.That((bool)TypeOf("MenuLightGeometry").GetMethod("TryCreate", Members)!.Invoke(null, arguments)!, Is.True);
         return arguments[4]!;
+    }
+
+    private static void Horizontalize(object definition)
+    {
+        Set(definition, "RotationX", 0f);
+        Set(definition, "RotationZ", 0f);
+        Set(definition, "QuaternionX", 0f);
+        Set(definition, "QuaternionY", 0f);
+        Set(definition, "QuaternionZ", 0f);
+        Set(definition, "QuaternionW", 1f);
     }
 
     private static object Default(string type)

@@ -51,7 +51,8 @@ namespace ChromaGLS.Settings
         private float _heldSwingDampingForceScale;
         private FerrofluidGrabOwnership? _ownership;
         private Collider? _floorCollider;
-        private BoxCollider _cubeCollider = null!;
+        private MeshCollider _cubeCollider = null!;
+        private Mesh? _cubeContactMesh;
         private FerroMaterial? _colliderMaterial;
         private FerroMaterial? _cornerMaterial;
         private FerroMaterial? _floorContactMaterial;
@@ -70,6 +71,15 @@ namespace ChromaGLS.Settings
         private GameObject? _spinAttach;
         private Vector3 _spinLiftStart;
         private Vector3 _spinLiftEnd;
+        private GameObject? _physicsRoot;
+        private GameObject? _colliderObject;
+        private FerrofluidPhysicsWorld? _world;
+        private bool _worldRegistered;
+        private float _physicsDeltaTime;
+        private Vector3 _previousPhysicsPosition;
+        private Quaternion _previousPhysicsRotation = Quaternion.identity;
+        private Vector3 _currentPhysicsPosition;
+        private Quaternion _currentPhysicsRotation = Quaternion.identity;
 
         private enum SpinPhase : byte
         {
@@ -92,6 +102,61 @@ namespace ChromaGLS.Settings
 
         internal Vector3 BodyAngularVelocity => _body.angularVelocity;
 
+        internal Rigidbody PhysicsBody => _body;
+
+        internal bool OwnsColliderGameObject(GameObject candidate)
+            => ReferenceEquals(candidate, _colliderObject);
+
+        internal void ConfigurePhysicsWorld(FerrofluidPhysicsWorld world)
+            => _world = world;
+
+        internal int EvaluatePhysicsSubsteps(float deltaTime)
+            => _grabShape.IsSphere
+                ? 1
+                : FerrofluidGrabPhysics.EvaluateCubePhysicsSubsteps(_body.angularVelocity.magnitude, deltaTime);
+
+        internal void CapturePreviousPhysicsPose()
+        {
+            _previousPhysicsPosition = _currentPhysicsPosition;
+            _previousPhysicsRotation = _currentPhysicsRotation;
+        }
+
+        internal void CaptureCurrentPhysicsPose()
+        {
+            _currentPhysicsPosition = _body.position;
+            _currentPhysicsRotation = _body.rotation;
+            if (_suspendInterpolation)
+            {
+                // A floor snap teleports the body, so the renderer must jump and not glide.
+                _suspendInterpolation = false;
+                _previousPhysicsPosition = _currentPhysicsPosition;
+                _previousPhysicsRotation = _currentPhysicsRotation;
+            }
+        }
+
+        internal void RenderPhysicsPose(float alpha)
+            => transform.SetPositionAndRotation(
+                Vector3.LerpUnclamped(_previousPhysicsPosition, _currentPhysicsPosition, alpha),
+                Quaternion.SlerpUnclamped(_previousPhysicsRotation, _currentPhysicsRotation, alpha));
+
+        private void RegisterPhysicsWorld()
+        {
+            if (_world == null || _worldRegistered)
+                return;
+
+            _world.Register(this);
+            _worldRegistered = true;
+        }
+
+        private void UnregisterPhysicsWorld()
+        {
+            if (!_worldRegistered || _world == null)
+                return;
+
+            _world.Unregister(this);
+            _worldRegistered = false;
+        }
+
         internal void SampleGrabTarget(float deltaTime, float sampleTime)
         {
             if (_attachTransform == null || _spinTestPhase != SpinPhase.Idle)
@@ -102,7 +167,7 @@ namespace ChromaGLS.Settings
             _smoothedGrabPosition = FerrofluidInteraction.TrackPosition(
                 _previousGrabTarget,
                 _rawGrabTarget,
-                transform.lossyScale.x,
+                _body.transform.lossyScale.x,
                 deltaTime);
             _grabSampleTime = sampleTime;
             _grabSampleDeltaTime = deltaTime;
@@ -132,9 +197,26 @@ namespace ChromaGLS.Settings
         {
             _enclosure = enclosure;
             _ownership = ownership;
-            _body = gameObject.AddComponent<Rigidbody>();
+
+            // A managed world simulates proxy roots inside its own physics scene; the standalone
+            // path keeps the body on this root so unmanaged validations behave as before.
+            Transform physicsParent = transform;
+            if (_world != null)
+            {
+                GameObject physicsRoot = new("ChromaGLS Ferrofluid Physics Body");
+                physicsRoot.transform.SetPositionAndRotation(transform.position, transform.rotation);
+                physicsRoot.transform.localScale = transform.lossyScale;
+                _world.MoveRootToScene(physicsRoot);
+                physicsRoot.AddComponent<CollisionRelay>().Initialize(this);
+                _physicsRoot = physicsRoot;
+                physicsParent = physicsRoot.transform;
+            }
+
+            _body = physicsParent.gameObject.AddComponent<Rigidbody>();
             _body.useGravity = false;
-            _body.interpolation = RigidbodyInterpolation.Interpolate;
+            _body.interpolation = _world != null
+                ? RigidbodyInterpolation.None
+                : RigidbodyInterpolation.Interpolate;
 
             // A 25 m/s throw tunnels through the static floor under ContinuousDynamic in native
             // validation; speculative contacts resolve it on the first contact step.
@@ -147,7 +229,7 @@ namespace ChromaGLS.Settings
             // The collider rides a child so the renderer's layer never has to change.
             GameObject colliderObject = new("ChromaGLS Ferrofluid Body Collider");
             colliderObject.layer = FerrofluidGrabPhysics.EnclosureLayer;
-            colliderObject.transform.SetParent(transform, false);
+            colliderObject.transform.SetParent(physicsParent, false);
             colliderObject.transform.localPosition = Vector3.zero;
             colliderObject.transform.localRotation = Quaternion.identity;
             colliderObject.transform.localScale = Vector3.one;
@@ -156,13 +238,16 @@ namespace ChromaGLS.Settings
                 SphereCollider collider = colliderObject.AddComponent<SphereCollider>();
                 collider.radius = 0.5f;
                 collider.sharedMaterial = material;
-                _grabShape = FerrofluidGrabShape.ForSphere(0.5f * transform.lossyScale.y);
+                _grabShape = FerrofluidGrabShape.ForSphere(0.5f * _body.transform.lossyScale.y);
             }
             else
             {
-                _cubeCollider = colliderObject.AddComponent<BoxCollider>();
-                _cubeCollider.size = Vector3.one;
+                _cubeCollider = colliderObject.AddComponent<MeshCollider>();
+                _cubeCollider.convex = true;
                 _cubeCollider.sharedMaterial = material;
+                _cubeContactMesh = FerrofluidContactGeometry.CreateCubeColliderMesh(0f);
+                _cubeCollider.sharedMesh = _cubeContactMesh;
+                _configuredRoundness = 0f;
                 _colliderMaterial = material;
                 _cornerMaterial = new FerroMaterial("ferrofluid cube corner")
                 {
@@ -186,7 +271,9 @@ namespace ChromaGLS.Settings
                     bounceCombine = material.bounceCombine,
                     hideFlags = HideFlags.DontSave,
                 };
-                _grabShape = FerrofluidGrabShape.ForBox(0.5f * transform.lossyScale);
+                _grabShape = FerrofluidGrabShape.ForConvexBox(
+                    0.5f * _body.transform.lossyScale,
+                    _cubeContactMesh.vertices);
             }
 
             // A kinematic pivot body plus a free-rotation joint lets the clicked point hang under
@@ -195,11 +282,15 @@ namespace ChromaGLS.Settings
             {
                 hideFlags = HideFlags.HideAndDontSave,
             };
+
+            // Create the anchor's native body in its final scene so joint teardown and recreation stay safe.
+            if (_world != null)
+                _world.MoveRootToScene(anchorObject);
             _anchorBody = anchorObject.AddComponent<Rigidbody>();
             _anchorBody.useGravity = false;
             _anchorBody.isKinematic = true;
             _anchorBody.interpolation = RigidbodyInterpolation.None;
-            _joint = gameObject.AddComponent<ConfigurableJoint>();
+            _joint = physicsParent.gameObject.AddComponent<ConfigurableJoint>();
             _joint.autoConfigureConnectedAnchor = false;
             _joint.connectedBody = _anchorBody;
             _joint.connectedAnchor = Vector3.zero;
@@ -216,11 +307,28 @@ namespace ChromaGLS.Settings
             _freeInertiaTensor = _body.inertiaTensor;
             _freeInertiaRotation = _body.inertiaTensorRotation;
             _spinRadius = FerrofluidGrabPhysics.EvaluateSpinRadius(_grabShape);
+            _colliderObject = colliderObject;
+            _physicsDeltaTime = Time.fixedDeltaTime;
+            _currentPhysicsPosition = _body.position;
+            _currentPhysicsRotation = _body.rotation;
+            _previousPhysicsPosition = _currentPhysicsPosition;
+            _previousPhysicsRotation = _currentPhysicsRotation;
+#if !V1_29_1
+            InitializeContactModification();
+#endif
+
+            RegisterPhysicsWorld();
         }
 
         internal void SetMagnetHeightAmplification(float amplification) => _magnetHeightAmplification = amplification;
 
-        internal void ConfigureFloorContact(Collider floorCollider) => _floorCollider = floorCollider;
+        internal void ConfigureFloorContact(Collider floorCollider)
+        {
+            _floorCollider = floorCollider;
+#if !V1_29_1
+            CacheFloorContactId(floorCollider);
+#endif
+        }
 
         internal void ConfigureContactPhysics(Config config)
         {
@@ -261,13 +369,16 @@ namespace ChromaGLS.Settings
                 _body.ResetInertiaTensor();
             }
 
-            float halfExtent = FerrofluidContactGeometry.CalculateCubeCoreHalfExtent(roundness);
-            _cubeCollider.size = Vector3.one * (2f * halfExtent);
+            Mesh mesh = FerrofluidContactGeometry.CreateCubeColliderMesh(roundness);
+            Mesh? previousMesh = _cubeContactMesh;
+            _cubeContactMesh = mesh;
+            _cubeCollider.sharedMesh = mesh;
             _configuredRoundness = roundness;
-            _grabShape = FerrofluidGrabShape.ForBox(
-                Vector3.Scale(
-                    Vector3.one * halfExtent,
-                    transform.lossyScale));
+            _grabShape = FerrofluidGrabShape.ForConvexBox(
+                0.5f * _body.transform.lossyScale,
+                mesh.vertices);
+            if (previousMesh != null)
+                Destroy(previousMesh);
             _body.ResetInertiaTensor();
             _freeCenterOfMass = _body.centerOfMass;
             _freeInertiaTensor = _body.inertiaTensor;
@@ -303,9 +414,11 @@ namespace ChromaGLS.Settings
             if (_grabShape.IsSphere)
                 return;
 
-            bool cornerTop = _attachTransform == null && _spinTestPhase == SpinPhase.Idle;
+            bool held = _attachTransform != null;
+            bool cornerTop = !held && _spinTestPhase == SpinPhase.Idle;
             FerroMaterial? flatContact = null;
-            if (cornerTop)
+            Vector3 bodyVelocity = BodyVelocity;
+            if (cornerTop || held)
             {
                 Quaternion inverse = Quaternion.Inverse(_body.rotation);
                 float gap = _body.position.y - _enclosure.FloorY
@@ -313,12 +426,13 @@ namespace ChromaGLS.Settings
                         _grabShape,
                         _body.rotation,
                         Vector3.down);
-                if (_floorAssistanceEnabled
+                if (cornerTop
+                    && _floorAssistanceEnabled
                     && gap <= 0.002f
                     && _forceStick.sqrMagnitude == 0f
                     && _spinStick.sqrMagnitude == 0f
                     && Mathf.Abs(_incomingYVelocity) <= 0.75f
-                    && BodyVelocity.sqrMagnitude <= CubeFaceSettlingMaximumSpeed * CubeFaceSettlingMaximumSpeed)
+                    && bodyVelocity.sqrMagnitude <= CubeFaceSettlingMaximumSpeed * CubeFaceSettlingMaximumSpeed)
                 {
                     Vector3 candidate = FerrofluidGrabPhysics.EvaluateCubeFaceLandingAngularVelocity(
                         _body.rotation,
@@ -336,20 +450,42 @@ namespace ChromaGLS.Settings
                 Vector3 cornerClearances = 2f * Vector3.Scale(
                     new Vector3(absX, absY, absZ),
                     _grabShape.HalfExtents);
-                cornerTop = FerrofluidGrabPhysics.ShouldUseCubeCornerFriction(
-                    _cornerMaterialActive,
-                    gap,
-                    cornerClearances,
-                    inverse * _body.angularVelocity);
+                cornerTop = cornerTop
+                    && FerrofluidGrabPhysics.ShouldUseCubeCornerFriction(
+                        _cornerMaterialActive,
+                        gap,
+                        cornerClearances,
+                        inverse * _body.angularVelocity);
 
-                // Only a free cube resting within 10 degrees of flat on the floor runs the floor-contact material.
+                bool heldEdge = held
+                    && Mathf.Min(
+                        cornerClearances.x,
+                        Mathf.Min(cornerClearances.y, cornerClearances.z)) <= 0.004f;
+
+                // Held faces and edges use the tuned floor grip. Free cubes keep the existing
+                // near-flat condition so spinning corner tops retain their contact behavior.
                 if (!cornerTop
                     && gap <= RollingContactGap
-                    && Mathf.Max(absX, Mathf.Max(absY, absZ)) >= 0.9848078f)
+                    && (Mathf.Max(absX, Mathf.Max(absY, absZ)) >= 0.9848078f || heldEdge))
                     flatContact = _floorContactMaterial;
             }
 
-            FerroMaterial? target = cornerTop ? _cornerMaterial : (flatContact != null ? flatContact : _colliderMaterial);
+            // A corner top traveling faster than 0.05 m/s needs normal floor traction; only an
+            // effectively stationary top keeps the low corner grip.
+            FerroMaterial? target;
+            if (cornerTop)
+            {
+                float horizontalSpeedSquared = (bodyVelocity.x * bodyVelocity.x) + (bodyVelocity.z * bodyVelocity.z);
+
+                target = FerrofluidGrabPhysics.IsCubeCornerStationary(horizontalSpeedSquared)
+                    ? _cornerMaterial
+                    : _colliderMaterial;
+            }
+            else
+            {
+                target = flatContact != null ? flatContact : _colliderMaterial;
+            }
+
             _cornerMaterialActive = cornerTop;
             if (_cubeCollider.sharedMaterial == target)
                 return;
@@ -391,7 +527,7 @@ namespace ChromaGLS.Settings
                 gap,
                 _incomingYVelocity,
                 _body.velocity.y,
-                Time.fixedDeltaTime,
+                _physicsDeltaTime,
                 isStay);
 #pragma warning restore CS0618
             if (snap)
@@ -404,7 +540,7 @@ namespace ChromaGLS.Settings
                 gap = 0f;
             }
 
-            ApplyCubeFaceSettling(gap, Time.fixedDeltaTime);
+            ApplyCubeFaceSettling(gap, _physicsDeltaTime);
         }
 
         // Speculative stays can occur above the floor. Ignore those and active input so settling
@@ -430,7 +566,11 @@ namespace ChromaGLS.Settings
             if (rate <= 0f)
                 return;
 
-            _body.angularVelocity *= Mathf.Exp(-rate * deltaTime);
+            _body.angularVelocity = FerrofluidGrabPhysics.EvaluateCubeFaceSettlingAngularVelocity(
+                _body.rotation,
+                _body.angularVelocity,
+                rate,
+                deltaTime);
         }
 
         internal void SetControllerInput(
@@ -467,7 +607,7 @@ namespace ChromaGLS.Settings
         {
             _attachTransform = attachTransform;
             _bodyAnchor = localAnchor;
-            Vector3 worldBodyAnchor = Vector3.Scale(_bodyAnchor, transform.lossyScale);
+            Vector3 worldBodyAnchor = Vector3.Scale(_bodyAnchor, _body.transform.lossyScale);
 
             // The kinematic anchor starts at the body's actual physical anchor so acquiring a
             // rendered-pose grab point never snaps the body toward a stale transform.
@@ -507,7 +647,8 @@ namespace ChromaGLS.Settings
             _heldSwingDampingForceScale = EvaluateHeldSwingForceScale(leverSquared);
             _joint.rotationDriveMode = RotationDriveMode.Slerp;
             _joint.slerpDrive = default;
-            _body.interpolation = RigidbodyInterpolation.Interpolate;
+            if (_world == null)
+                _body.interpolation = RigidbodyInterpolation.Interpolate;
             _body.WakeUp();
         }
 
@@ -521,7 +662,7 @@ namespace ChromaGLS.Settings
             StopSpinTest();
             _body.rotation = Quaternion.Euler(0f, _body.rotation.eulerAngles.y, 0f);
             _body.rotation = Quaternion.Euler(0f, _body.rotation.eulerAngles.y, 0f);
-            Vector3 topPoint = _body.position + (_body.rotation * new Vector3(0f, 0.5f * transform.lossyScale.y, 0f));
+            Vector3 topPoint = _body.position + (_body.rotation * new Vector3(0f, 0.5f * _body.transform.lossyScale.y, 0f));
             _spinAttach = new GameObject("ChromaGLS Spin Attach")
             {
                 hideFlags = HideFlags.HideAndDontSave,
@@ -530,7 +671,7 @@ namespace ChromaGLS.Settings
             _spinTestOmega = Mathf.PI * 2f * rotationsPerSecond;
             _spinTestElapsed = 0f;
             _spinLiftStart = topPoint;
-            _spinLiftEnd = new Vector3(topPoint.x, _enclosure.FloorY + 0.305f + transform.lossyScale.y, topPoint.z);
+            _spinLiftEnd = new Vector3(topPoint.x, _enclosure.FloorY + 0.305f + _body.transform.lossyScale.y, topPoint.z);
             AcquirePivot(_spinAttach.transform, new Vector3(0f, 0.5f, 0f));
             _joint.slerpDrive = default;
             _spinTestPhase = SpinPhase.Active;
@@ -585,7 +726,8 @@ namespace ChromaGLS.Settings
             ClearPivotDrives();
             _joint.slerpDrive = default;
             _attachTransform = null;
-            _body.interpolation = RigidbodyInterpolation.Interpolate;
+            if (_world == null)
+                _body.interpolation = RigidbodyInterpolation.Interpolate;
         }
 
         private void ClearPivotDrives()
@@ -606,7 +748,7 @@ namespace ChromaGLS.Settings
         private void UpdateGrabAnchor(float sampleTime, float deltaTime)
         {
             Vector3 desired = CalculateGrabTarget(sampleTime);
-            Vector3 grabOffset = _body.rotation * Vector3.Scale(_bodyAnchor, transform.lossyScale);
+            Vector3 grabOffset = _body.rotation * Vector3.Scale(_bodyAnchor, _body.transform.lossyScale);
             Vector3 clampedCenter = FerrofluidGrabPhysics.ClampEnclosureWallPosition(
                 _enclosure,
                 _grabShape,
@@ -637,14 +779,16 @@ namespace ChromaGLS.Settings
 
         private void FixedUpdate()
         {
-            AdvancePhysics(Time.fixedDeltaTime, Time.fixedUnscaledTime);
+            if (_world == null)
+                AdvancePhysics(Time.fixedDeltaTime, Time.fixedUnscaledTime);
         }
 
         // Physics steps resample the filtered trajectory at the step's own clock so the joint
         // anchor matches the rendered sample's age instead of holding the last render value.
         internal void AdvancePhysics(float deltaTime, float sampleTime)
         {
-            if (_suspendInterpolation)
+            _physicsDeltaTime = deltaTime;
+            if (_world == null && _suspendInterpolation)
             {
                 _suspendInterpolation = false;
                 _body.interpolation = RigidbodyInterpolation.Interpolate;
@@ -729,6 +873,9 @@ namespace ChromaGLS.Settings
             _incomingYVelocity = _body.velocity.y;
 
             UpdateCornerContactMaterial(deltaTime);
+#if !V1_29_1
+            UpdateInverseInertiaScale(deltaTime);
+#endif
         }
 #pragma warning restore CS0618
 
@@ -763,7 +910,7 @@ namespace ChromaGLS.Settings
             {
                 if (_attachTransform != null)
                 {
-                    Vector3 pivot = _body.position + (_body.rotation * Vector3.Scale(_bodyAnchor, transform.lossyScale));
+                    Vector3 pivot = _body.position + (_body.rotation * Vector3.Scale(_bodyAnchor, _body.transform.lossyScale));
                     Vector3 physicalCenter = _body.position + (_body.rotation * _freeCenterOfMass);
                     Vector3 acceleration = FerrofluidGrabPhysics.EvaluateHeldForceAcceleration(
                         physicalCenter - pivot,
@@ -885,8 +1032,36 @@ namespace ChromaGLS.Settings
                 ForceMode.Force);
         }
 
+        private void OnEnable()
+        {
+#if !V1_29_1
+            SubscribeContactModification();
+#endif
+
+            if (_physicsRoot != null)
+            {
+                _physicsRoot.SetActive(true);
+                _anchorBody.gameObject.SetActive(true);
+            }
+
+            RegisterPhysicsWorld();
+        }
+
         private void OnDisable()
         {
+#if !V1_29_1
+            UnsubscribeContactModification();
+#endif
+
+            UnregisterPhysicsWorld();
+
+            // A disabled actor must not keep simulating or blocking UI rays in the owned scene.
+            if (_physicsRoot != null)
+            {
+                _physicsRoot.SetActive(false);
+                _anchorBody.gameObject.SetActive(false);
+            }
+
             StopSpinTest();
             Release();
             _ownership?.ReleaseTarget(this);
@@ -894,14 +1069,38 @@ namespace ChromaGLS.Settings
 
         private void OnDestroy()
         {
+#if !V1_29_1
+            UnsubscribeContactModification();
+#endif
+
             if (_spinAttach != null)
                 Destroy(_spinAttach);
+            if (_physicsRoot != null)
+                Destroy(_physicsRoot);
             if (_anchorBody != null)
                 Destroy(_anchorBody.gameObject);
             if (_cornerMaterial != null)
                 Destroy(_cornerMaterial);
             if (_floorContactMaterial != null)
                 Destroy(_floorContactMaterial);
+            if (_cubeContactMesh != null)
+                Destroy(_cubeContactMesh);
+        }
+
+        // Collision messages fire on the rigidbody's GameObject, which lives in the owned physics
+        // scene, so this relay forwards them back to the component on the visual root.
+        private sealed class CollisionRelay : MonoBehaviour
+        {
+            private FerrofluidGrabbable _owner = null!;
+
+            internal void Initialize(FerrofluidGrabbable owner)
+                => _owner = owner;
+
+            private void OnCollisionEnter(Collision collision)
+                => _owner.SnapFloorContact(collision, isStay: false);
+
+            private void OnCollisionStay(Collision collision)
+                => _owner.SnapFloorContact(collision, isStay: true);
         }
     }
 }

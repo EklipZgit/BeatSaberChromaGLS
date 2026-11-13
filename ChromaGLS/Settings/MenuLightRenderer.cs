@@ -218,6 +218,11 @@ namespace ChromaGLS.Settings
 
             // The strip is physically solid, so it must occlude the floor halo below it.
             material.SetFloat("_CustomZWrite", 1f);
+
+            // Vertex alpha is emission/bloom payload, not opacity, so the solid face must
+            // replace the background to keep end fades opaque rather than additive.
+            material.SetFloat("_BlendDstFactor", 0f);
+            material.SetFloat("_BlendDstFactorA", 0f);
             material.renderQueue = (int)RenderQueue.Transparent - 1;
             material.SetFloat("_BloomMultiplier", appearance.EvaluateBloomMultiplier());
             material.SetFloat("_WhiteBoostType", 1f);

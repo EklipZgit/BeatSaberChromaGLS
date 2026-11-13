@@ -26,7 +26,14 @@ namespace ChromaGLS.Settings
     {
         private readonly FerroMaterial _material;
         private readonly BoxCollider?[] _colliders;
+        private readonly Transform?[] _sourceTransforms;
+        private readonly GameObject?[] _sourceObjects;
         private readonly FerroMaterial?[] _originals;
+
+        private BoxCollider[] _proxies = System.Array.Empty<BoxCollider>();
+        private Transform[] _proxyTransforms = System.Array.Empty<Transform>();
+        private Matrix4x4[] _proxyMatrices = System.Array.Empty<Matrix4x4>();
+        private bool _proxiesCreated;
 
         internal FerrofluidMenuNoteContacts(Transform environment, FerroMaterial material)
         {
@@ -43,6 +50,8 @@ namespace ChromaGLS.Settings
             }
 
             _colliders = new BoxCollider?[count];
+            _sourceTransforms = new Transform?[count];
+            _sourceObjects = new GameObject?[count];
             _originals = new FerroMaterial?[count];
             int index = 0;
             foreach (BoxCollider collider in found)
@@ -50,6 +59,8 @@ namespace ChromaGLS.Settings
                 if (collider == null || collider.isTrigger)
                     continue;
                 _colliders[index] = collider;
+                _sourceTransforms[index] = collider.transform;
+                _sourceObjects[index] = collider.gameObject;
                 _originals[index] = collider.sharedMaterial;
                 index++;
             }
@@ -73,6 +84,77 @@ namespace ChromaGLS.Settings
             return null;
         }
 
+        // Collider-only clones in the owned physics scene take over note impacts; the original
+        // note colliders are never modified in production.
+        internal void CreateProxies(FerrofluidPhysicsWorld world)
+        {
+            if (_proxiesCreated)
+                return;
+
+            _proxiesCreated = true;
+            _proxies = new BoxCollider[_colliders.Length];
+            _proxyTransforms = new Transform[_colliders.Length];
+            _proxyMatrices = new Matrix4x4[_colliders.Length];
+            GameObject proxyRoot = new("ChromaGLS Ferrofluid Note Proxies");
+            world.MoveRootToScene(proxyRoot);
+            for (int i = 0; i < _colliders.Length; i++)
+            {
+                Transform? source = _sourceTransforms[i];
+                GameObject proxyObject = new("ChromaGLS Ferrofluid Note Proxy")
+                {
+                    layer = source != null ? source.gameObject.layer : FerrofluidGrabPhysics.EnclosureLayer,
+                };
+                proxyObject.transform.SetParent(proxyRoot.transform, false);
+                BoxCollider proxy = proxyObject.AddComponent<BoxCollider>();
+                proxy.sharedMaterial = _material;
+                if (source != null)
+                {
+                    BoxCollider sourceCollider = _colliders[i]!;
+                    proxy.center = sourceCollider.center;
+                    proxy.size = sourceCollider.size;
+                    proxy.contactOffset = sourceCollider.contactOffset;
+                }
+
+                _proxies[i] = proxy;
+                _proxyTransforms[i] = proxyObject.transform;
+                _proxyMatrices[i] = Matrix4x4.zero;
+            }
+
+            SyncProxies();
+        }
+
+        internal void SyncProxies()
+        {
+            for (int i = 0; i < _proxies.Length; i++)
+            {
+                Transform proxyTransform = _proxyTransforms[i];
+
+                // The menu environment can unload independently; never keep a ghost collider.
+                if (_sourceTransforms[i] == null)
+                {
+                    if (proxyTransform.gameObject.activeSelf)
+                        proxyTransform.gameObject.SetActive(false);
+                    continue;
+                }
+
+                bool active = _colliders[i]!.enabled && _sourceObjects[i]!.activeInHierarchy;
+                if (proxyTransform.gameObject.activeSelf != active)
+                    proxyTransform.gameObject.SetActive(active);
+                if (!active)
+                    continue;
+
+                Matrix4x4 matrix = _sourceTransforms[i]!.localToWorldMatrix;
+                if (matrix != _proxyMatrices[i])
+                {
+                    _proxyMatrices[i] = matrix;
+                    Transform source = _sourceTransforms[i]!;
+                    proxyTransform.SetPositionAndRotation(source.position, source.rotation);
+                    proxyTransform.localScale = source.lossyScale;
+                }
+            }
+        }
+
+        // Legacy standalone-validation path: bind the enclosure material onto the originals.
         internal void Apply()
         {
             for (int i = 0; i < _colliders.Length; i++)
@@ -675,6 +757,8 @@ namespace ChromaGLS.Settings
             private FerrofluidMagnetController? _grabInput;
             private FerrofluidGrabOwnership? _grabOwnership;
             private FerrofluidMenuNoteContacts? _menuNoteContacts;
+            private FerrofluidPhysicsWorld? _physicsWorld;
+            private FerrofluidPhysicsRenderDriver? _renderDriver;
             private readonly FerrofluidTriggerTracker _triggerTracker = new();
 
             internal void Initialize(Transform playerAnchor)
@@ -775,6 +859,29 @@ namespace ChromaGLS.Settings
                         hovered))
                     hovered!.Acquire(FerrofluidMagnetController.GetAttachTransform(controller!), grabPoint);
 
+                // The non-selected hand can pull its own object on the same frame; its raycast runs
+                // only on a fresh crossing while that hand holds no target.
+                VRController? other = controller != null && ReferenceEquals(controller, _grabInput.LeftController)
+                    ? _grabInput.RightController
+                    : _grabInput.LeftController;
+                bool otherIsLeft = other != null && ReferenceEquals(other, _grabInput.LeftController);
+                bool otherCrossing = otherIsLeft ? leftCrossing : rightCrossing;
+                if (otherCrossing
+                    && other != null
+                    && _grabOwnership.HeldTarget(other) == null
+                    && _grabInput.TryGetPointerState(other, out _, out RaycastResult otherHovering))
+                {
+                    FerrofluidGrabbable? otherHovered = ResolveHovered(otherHovering.gameObject);
+                    if (EvaluateGrabDecision(
+                            _grabOwnership,
+                            other,
+                            otherIsLeft,
+                            leftCrossing,
+                            rightCrossing,
+                            otherHovered))
+                        otherHovered!.Acquire(FerrofluidMagnetController.GetAttachTransform(other), otherHovering.worldPosition);
+                }
+
                 ApplyMagnetHeightAmplification(_cube != null ? _cube.Grabbable : null, hovered, controller, trigger);
                 ApplyMagnetHeightAmplification(_sphere != null ? _sphere.Grabbable : null, hovered, controller, trigger);
                 ApplyMagnetHeightAmplification(_fluidCube != null ? _fluidCube.Grabbable : null, hovered, controller, trigger);
@@ -799,8 +906,8 @@ namespace ChromaGLS.Settings
                     _fluidSphere.Grabbable.SampleGrabTarget(Time.unscaledDeltaTime, Time.unscaledTime);
             }
 
-            // The acquisition decision a grab frame makes once the pointer's currently selected hand
-            // is known; separated so native validation can drive the real arbitration path.
+            // The acquisition decision one hand's trigger crossing makes against its own hovered
+            // target; separated so native validation can drive the real arbitration path.
             internal static bool EvaluateGrabDecision(
                 FerrofluidGrabOwnership ownership,
                 object? selectedHand,
@@ -848,6 +955,7 @@ namespace ChromaGLS.Settings
                 Vector2 spinStick = Vector2.zero;
                 Quaternion pointerRotation = Quaternion.identity;
                 FerrofluidGrabPhysics.RouteControllerInput(
+                    _grabOwnership!,
                     _grabOwnership!.OwnerOf(grabbable),
                     selected,
                     ReferenceEquals(grabbable, hovered),
@@ -925,7 +1033,9 @@ namespace ChromaGLS.Settings
             private static bool HoverMatches(GameObject hovering, FerrofluidPrimitiveEffect? effect)
             {
                 return effect != null
-                    && (ReferenceEquals(hovering, effect.gameObject) || hovering.transform.IsChildOf(effect.transform));
+                    && (ReferenceEquals(hovering, effect.gameObject)
+                        || hovering.transform.IsChildOf(effect.transform)
+                        || (effect.Grabbable != null && effect.Grabbable.OwnsColliderGameObject(hovering)));
             }
 
             private FerrofluidGrabbable? AttachGrabbable(
@@ -938,6 +1048,8 @@ namespace ChromaGLS.Settings
 
                 effect.InitializeFloorShadow(_enclosure.FloorY, _shadowLightDirection);
                 FerrofluidGrabbable grabbable = effect.gameObject.AddComponent<FerrofluidGrabbable>();
+                if (_physicsWorld != null)
+                    grabbable.ConfigurePhysicsWorld(_physicsWorld);
                 grabbable.Initialize(
                     _enclosure,
                     sphere,
@@ -971,7 +1083,6 @@ namespace ChromaGLS.Settings
                     return false;
                 }
 
-                _enclosureResolved = true;
                 foreach (FlickeringNeonSign sign in Resources.FindObjectsOfTypeAll<FlickeringNeonSign>())
                 {
                     if (!sign.gameObject.activeInHierarchy || !sign.gameObject.scene.IsValid())
@@ -987,10 +1098,12 @@ namespace ChromaGLS.Settings
                 _floorMaterial = CreateContactMaterial(floor: true);
                 _grabInput = FerrofluidMagnetController.CreateForGrab();
                 _grabOwnership = new FerrofluidGrabOwnership();
+                EnsurePhysicsWorld();
                 CreateEnclosureFloor();
                 CreateCameraCollision();
                 InitializeMenuNoteContacts();
                 Plugin.Log.Info($"[ChromaGLS Ferrofluid Environment] grab enclosure center={_enclosure.Center} radius={_enclosure.Radius} rear={_enclosure.RearPoint}.");
+                _enclosureResolved = true;
                 return true;
             }
 
@@ -1004,7 +1117,32 @@ namespace ChromaGLS.Settings
                 _menuNoteContacts = FerrofluidMenuNoteContacts.Create(
                     SceneManager.GetSceneByName("MainMenu"),
                     _enclosureMaterial);
-                _menuNoteContacts?.Apply();
+                if (_menuNoteContacts != null && _physicsWorld != null)
+                    _physicsWorld.SetNoteContacts(_menuNoteContacts);
+            }
+
+            // One world owns one local physics scene; bodies, joints, anchors, and all colliders
+            // it may contact are moved there together while the visuals stay put.
+            private void EnsurePhysicsWorld()
+            {
+                _physicsWorld ??= new FerrofluidPhysicsWorld();
+                if (_renderDriver == null)
+                {
+                    GameObject driverObject = new("ChromaGLS Ferrofluid Physics Render Driver");
+                    driverObject.transform.SetParent(transform, false);
+                    _renderDriver = driverObject.AddComponent<FerrofluidPhysicsRenderDriver>();
+                }
+
+                _renderDriver.Bind(_physicsWorld);
+                _renderDriver.gameObject.SetActive(true);
+            }
+
+            private void FixedUpdate()
+            {
+                _physicsWorld?.Step(
+                    Time.fixedDeltaTime,
+                    Time.fixedUnscaledDeltaTime,
+                    Time.fixedUnscaledTime);
             }
 
             private void CreateEnclosureFloor()
@@ -1013,7 +1151,8 @@ namespace ChromaGLS.Settings
                 {
                     layer = FerrofluidGrabPhysics.EnclosureLayer,
                 };
-                floor.transform.SetParent(transform, false);
+                if (_physicsWorld != null)
+                    _physicsWorld.MoveRootToScene(floor);
                 floor.transform.position = new Vector3(
                     _enclosure.Center.x - (_enclosure.RearNormal.x * _enclosure.RearExtension * 0.5f),
                     _enclosure.FloorY - 0.5f,
@@ -1038,9 +1177,11 @@ namespace ChromaGLS.Settings
                 {
                     layer = FerrofluidGrabPhysics.EnclosureLayer,
                 };
-                cameraObject.transform.SetParent(transform, true);
+                if (_physicsWorld != null)
+                    _physicsWorld.MoveRootToScene(cameraObject);
                 FerrofluidCameraCollision collision = cameraObject.AddComponent<FerrofluidCameraCollision>();
                 collision.Initialize(_headTransform, SphereScale.y * 0.5f * 0.85f, _enclosureMaterial);
+                _physicsWorld?.SetCameraCollision(collision);
                 _cameraCollision = collision;
             }
 
@@ -1090,7 +1231,6 @@ namespace ChromaGLS.Settings
             private void OnEnable()
             {
                 Reconcile(_cubeEnabled, _sphereEnabled, _fluidCubeEnabled, _fluidSphereEnabled, _config);
-                _menuNoteContacts?.Apply();
                 if (_cameraCollision != null)
                 {
                     _cameraCollision.SnapToHead();
@@ -1098,28 +1238,45 @@ namespace ChromaGLS.Settings
                 }
             }
 
-            // The primitives are scene roots, so hiding the menu rig must also stop their simulations.
+            // The primitives are scene roots, so hiding the menu rig must also stop their
+            // simulations and release the owned physics scene they simulated in.
             private void OnDisable()
-            {
-                _menuNoteContacts?.Restore();
-                DestroyPrimitive(ref _cube);
-                DestroyPrimitive(ref _sphere);
-                DestroyPrimitive(ref _fluidCube);
-                DestroyPrimitive(ref _fluidSphere);
-                if (_cameraCollision != null)
-                {
-                    _cameraCollision.gameObject.SetActive(false);
-                }
-            }
+                => ReleaseOwnedWorldResources();
 
             private void OnDestroy()
             {
-                _menuNoteContacts?.Restore();
-                _menuNoteContacts = null;
+                ReleaseOwnedWorldResources();
+                if (ReferenceEquals(_manager, this))
+                {
+                    _manager = null;
+                }
+            }
+
+            // Tears down the whole owned-physics stack so a fresh enable rebuilds it cleanly:
+            // the render driver first, then the actors, then the scene and materials last.
+            private void ReleaseOwnedWorldResources()
+            {
+                if (_renderDriver != null)
+                {
+                    _renderDriver.gameObject.SetActive(false);
+                    _renderDriver.Unbind();
+                }
+
                 DestroyPrimitive(ref _cube);
                 DestroyPrimitive(ref _sphere);
                 DestroyPrimitive(ref _fluidCube);
                 DestroyPrimitive(ref _fluidSphere);
+                if (_physicsWorld != null)
+                {
+                    _physicsWorld.Dispose();
+                    _physicsWorld = null;
+                }
+
+                _menuNoteContacts = null;
+                _floorCollider = null;
+                _cameraCollision = null;
+                _grabInput = null;
+                _grabOwnership = null;
                 if (_enclosureMaterial != null)
                 {
                     Destroy(_enclosureMaterial);
@@ -1132,10 +1289,8 @@ namespace ChromaGLS.Settings
                     _floorMaterial = null;
                 }
 
-                if (ReferenceEquals(_manager, this))
-                {
-                    _manager = null;
-                }
+                _enclosureResolved = false;
+                _enclosureFailedLogged = false;
             }
         }
     }

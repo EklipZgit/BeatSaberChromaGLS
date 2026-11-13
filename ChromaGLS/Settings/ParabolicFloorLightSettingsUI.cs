@@ -44,6 +44,15 @@ namespace ChromaGLS.Settings
         [UIObject("material-width-controls")]
         private GameObject? _materialWidthControls;
 
+        [UIObject("floor-height-controls")]
+        private GameObject? _floorHeightControls;
+
+        [UIObject("underside-depth-controls")]
+        private GameObject? _undersideDepthControls;
+
+        [UIObject("frame-width-hint")]
+        private GameObject? _frameWidthHint;
+
         internal ParabolicFloorLightSettingsUI(Config config, ParabolicFloorLight light)
             : this(config, light, null)
         {
@@ -87,8 +96,8 @@ namespace ChromaGLS.Settings
         [UIValue("light-height")]
         private float HeightValue
         {
-            get => Current.Height;
-            set => PreviewLight(def => def.Height = value);
+            get => ParabolicFloorLightSliderMapping.EvaluateHeightSlider(Current.Height);
+            set => PreviewLight(def => def.Height = ParabolicFloorLightSliderMapping.EvaluateHeight(value));
         }
 
         [UIValue("light-depth")]
@@ -96,6 +105,13 @@ namespace ChromaGLS.Settings
         {
             get => Current.Depth;
             set => PreviewLight(def => def.Depth = value);
+        }
+
+        [UIValue("floor-height")]
+        private float FloorHeightValue
+        {
+            get => Current.Height;
+            set => PreviewLight(def => def.Height = value);
         }
 
         [UIValue("light-size")]
@@ -164,22 +180,22 @@ namespace ChromaGLS.Settings
         [UIValue("parabola-red")]
         private float ParabolaRed
         {
-            get => ParabolicFloorLightSliderMapping.EvaluateIntensitySlider(Current.Appearance.Red);
-            set => PreviewAppearance(s => s.WithRed(ParabolicFloorLightSliderMapping.EvaluateIntensity(value)));
+            get => ParabolicFloorLightSliderMapping.EvaluateColorIntensitySlider(Current.Appearance.Red);
+            set => PreviewAppearance(s => s.WithRed(ParabolicFloorLightSliderMapping.EvaluateColorIntensity(value)));
         }
 
         [UIValue("parabola-green")]
         private float ParabolaGreen
         {
-            get => ParabolicFloorLightSliderMapping.EvaluateIntensitySlider(Current.Appearance.Green);
-            set => PreviewAppearance(s => s.WithGreen(ParabolicFloorLightSliderMapping.EvaluateIntensity(value)));
+            get => ParabolicFloorLightSliderMapping.EvaluateColorIntensitySlider(Current.Appearance.Green);
+            set => PreviewAppearance(s => s.WithGreen(ParabolicFloorLightSliderMapping.EvaluateColorIntensity(value)));
         }
 
         [UIValue("parabola-blue")]
         private float ParabolaBlue
         {
-            get => ParabolicFloorLightSliderMapping.EvaluateIntensitySlider(Current.Appearance.Blue);
-            set => PreviewAppearance(s => s.WithBlue(ParabolicFloorLightSliderMapping.EvaluateIntensity(value)));
+            get => ParabolicFloorLightSliderMapping.EvaluateColorIntensitySlider(Current.Appearance.Blue);
+            set => PreviewAppearance(s => s.WithBlue(ParabolicFloorLightSliderMapping.EvaluateColorIntensity(value)));
         }
 
         [UIValue("parabola-width")]
@@ -383,6 +399,12 @@ namespace ChromaGLS.Settings
                 _floorGlowControls.SetActive(def.Type == MenuLightType.Floor);
             if (_freePoseControls != null)
                 _freePoseControls.SetActive(def.Type != MenuLightType.Floor);
+            if (_floorHeightControls != null)
+                _floorHeightControls.SetActive(def.Type == MenuLightType.Floor);
+            if (_undersideDepthControls != null)
+                _undersideDepthControls.SetActive(def.Type != MenuLightType.Floor);
+            if (_frameWidthHint != null)
+                _frameWidthHint.SetActive(def.Type is MenuLightType.Square or MenuLightType.Circle);
             _loading = false;
         }
 
@@ -419,6 +441,8 @@ namespace ChromaGLS.Settings
 
         private string FormatIntensity(float value) => ParabolicFloorLightSliderMapping.EvaluateIntensity(value).ToString("F2");
 
+        private string FormatColorIntensity(float value) => ParabolicFloorLightSliderMapping.EvaluateColorIntensity(value).ToString("F2");
+
         private string FormatWidth(float value) => ParabolicFloorLightSliderMapping.EvaluateWidthScale(value).ToString("F2");
 
         private string FormatLightWidth(float value) => ParabolicFloorLightSliderMapping.EvaluateLightWidthScale(value).ToString("0.00#");
@@ -432,6 +456,8 @@ namespace ChromaGLS.Settings
         private string FormatRotation(float value) => value.ToString("F0");
 
         private string FormatDepth(float value) => value.ToString("0.000");
+
+        private string FormatHeight(float value) => ParabolicFloorLightSliderMapping.EvaluateHeight(value).ToString("0.000");
 
         private string FormatEndLength(float value) => value <= 0f ? "Automatic" : value.ToString("F2");
     }

@@ -40,6 +40,7 @@ namespace ChromaGLS
             typeof(GlsColorDistancePreparePatch),
             typeof(ChromaGlsRequirementSelectionPatch),
             typeof(FerrofluidNeonSignPatch),
+            typeof(HarmonyPatches.FerrofluidPhysicsRaycastPatch),
 #if FERROFLUID_TWEAKS
             typeof(HarmonyPatches.FerrofluidFpfcTogglePatch),
             typeof(HarmonyPatches.FerrofluidKeyboardKeyCodePatch),

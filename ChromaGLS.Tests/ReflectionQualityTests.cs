@@ -50,6 +50,7 @@ public class ReflectionQualityTests
     [TestCase("None")]
     [TestCase("Low")]
     [TestCase("High")]
+    [TestCase("Ultra")]
     public void InitializedChoiceNeverRescansOrChangesTheSavedSetting(string choice)
     {
         object config = NewConfig();
@@ -73,6 +74,7 @@ public class ReflectionQualityTests
     [TestCase("None", 0)]
     [TestCase("Low", 1024)]
     [TestCase("High", 4096)]
+    [TestCase("Ultra", 4096)]
     public void MenuCacheResolutionMatchesTheSelectedTier(string choice, int expected)
     {
         object quality = Enum.Parse(RequiredType("ReflectionQuality"), choice);
@@ -84,6 +86,7 @@ public class ReflectionQualityTests
     [TestCase("None", 1024)]
     [TestCase("Low", 1024)]
     [TestCase("High", 8192)]
+    [TestCase("Ultra", 16384)]
     public void ProceduralLightResolutionMatchesTheSelectedTier(string choice, int expected)
     {
         object quality = Enum.Parse(RequiredType("ReflectionQuality"), choice);
@@ -95,6 +98,7 @@ public class ReflectionQualityTests
     [TestCase("None", 0)]
     [TestCase("Low", 1024)]
     [TestCase("High", 2048)]
+    [TestCase("Ultra", 2048)]
     public void RoomFaceResolutionMatchesTheSelectedTier(string choice, int expected)
     {
         object quality = Enum.Parse(RequiredType("ReflectionQuality"), choice);
@@ -125,7 +129,7 @@ public class ReflectionQualityTests
         object list = Activator.CreateInstance(listType, Instance, null, new object[] { config, owner, store, (Action<string?>)(_ => { }) }, null)!;
         PropertyInfo choices = FindBinding(listType, "reflection-quality-options");
         string[] names = ((IEnumerable)choices.GetValue(list)!).Cast<object>().Select(value => value.ToString()!).ToArray();
-        Assert.That(names, Is.EqualTo(new[] { "None", "Low", "High" }));
+        Assert.That(names, Is.EqualTo(new[] { "None", "Low", "High", "Ultra" }));
         PropertyInfo selection = FindBinding(listType, "reflection-quality");
         Assert.That(selection.GetValue(list)!.ToString(), Is.EqualTo("High"));
         SetQuality(config, "Low");
@@ -135,6 +139,7 @@ public class ReflectionQualityTests
     [TestCase("None")]
     [TestCase("Low")]
     [TestCase("High")]
+    [TestCase("Ultra")]
     public void GeneratedStoreRoundTripsChoiceAndInitializationMarker(string choice)
     {
         Type configType = RequiredType("Config");

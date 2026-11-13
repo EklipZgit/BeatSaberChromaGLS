@@ -44,6 +44,15 @@ namespace ChromaGLS.Settings
     {
         private const int CurveSegments = ParabolicFloorLightGeometry.SegmentCount;
 
+        // Floor core vertices carry per-face radiance factors and bloom alpha; the
+        // directional reflection metadata derives from the same shared scales.
+        internal const float FloorTopRadianceScale = 0.64f;
+        internal const float FloorSideRadianceScale = 1.44f;
+        internal const float FloorSideEmissionScale = 1.3f;
+
+        // Faded ribbon ends stay slightly lit: reaching black would read darker than the room.
+        private const float MinimumRibbonEmission = 0.1f;
+
         internal static bool TryCreate(
             FerrofluidGrabEnclosure enclosure,
             Vector3 playerPosition,
@@ -55,7 +64,7 @@ namespace ChromaGLS.Settings
             flat = flat.sqrMagnitude > 0.000001f ? flat.normalized : Vector3.forward;
             Vector3 right = Vector3.Cross(Vector3.up, flat);
             Quaternion yaw = Quaternion.AngleAxis(Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg, Vector3.up);
-            float renderHeight = definition.Type == MenuLightType.Floor ? Mathf.Clamp(definition.Height, 0.001f, 2f) : definition.Height;
+            float renderHeight = definition.GetHeight();
             Vector3 position = new Vector3(playerPosition.x, enclosure.FloorY + renderHeight, playerPosition.z)
                 + (right * definition.PositionX) + (flat * definition.PositionZ);
             Quaternion rotation = yaw * definition.GetRotation();
@@ -65,7 +74,7 @@ namespace ChromaGLS.Settings
             if (definition.Type == MenuLightType.Parabola || definition.Type == MenuLightType.Floor)
             {
                 position -= flat * 0.35f;
-                if (!TryCreateParabola(enclosure, playerPosition, forward, definition, flat, yaw, out core, out glow))
+                if (!TryCreateParabola(enclosure, playerPosition, forward, definition, flat, yaw, renderHeight, out core, out glow))
                 {
                     meshes = default;
                     return false;
@@ -94,10 +103,10 @@ namespace ChromaGLS.Settings
             MenuLightDefinition definition,
             Vector3 flat,
             Quaternion yaw,
+            float renderHeight,
             out ParabolicFloorLightMeshData core,
             out ParabolicFloorLightGlowMeshData glow)
         {
-            float renderHeight = definition.Type == MenuLightType.Floor ? Mathf.Clamp(definition.Height, 0.001f, 2f) : definition.Height;
             float coefficient = ParabolicFloorLightGeometry.BaseCurveScale
                 / (definition.Appearance.WidthScale * definition.Appearance.WidthScale);
             float left;
@@ -223,9 +232,10 @@ namespace ChromaGLS.Settings
                 vertices[corner + 1] = negative[station];
                 vertices[corner + 2] = negative[station] - (Vector3.up * depth);
                 vertices[corner + 3] = positive[station] - (Vector3.up * depth);
+                float emission = alpha == null ? 1f : MinimumRibbonEmission + ((1f - MinimumRibbonEmission) * alpha[station]);
                 for (int side = 0; side < 4; side++)
                 {
-                    colors[corner + side] = new Color(1f, 1f, 1f, alpha == null ? 1f : alpha[station]);
+                    colors[corner + side] = new Color(1f, 1f, 1f, emission);
                     uv[corner + side] = new Vector2(station / (float)(stations - 1), side * 0.25f);
                 }
 
@@ -248,9 +258,8 @@ namespace ChromaGLS.Settings
             return new ParabolicFloorLightMeshData(vertices, triangles, colors, uv);
         }
 
-        // Floor-only face shading: duplicate each triangle's vertices so the top, bottom
-        // and vertical faces can carry independent RGB factors while the end-fade alpha
-        // and positions stay identical. Top scales .64, sides/endcaps 1.44, bottom 1.
+        // Duplicate triangle vertices so top and vertical faces can carry independent
+        // radiance and native-bloom input. Top scales .64, sides/endcaps 1.44, bottom 1.
         private static ParabolicFloorLightMeshData ApplyFloorFaceRadiance(ParabolicFloorLightMeshData core)
         {
             int indexCount = core.Triangles.Length;
@@ -264,12 +273,11 @@ namespace ChromaGLS.Settings
                 int b = core.Triangles[triangle + 1];
                 int c = core.Triangles[triangle + 2];
                 Vector3 normal = Vector3.Cross(core.Vertices[b] - core.Vertices[a], core.Vertices[c] - core.Vertices[a]);
-                float factor = normal.y > 0f ? 0.64f : normal.y < 0f ? 1f : 1.44f;
+                float factor = normal.y > 0f ? FloorTopRadianceScale : normal.y < 0f ? 1f : FloorSideRadianceScale;
 
-                // Vertical faces carry the native-bloom payload in vertex alpha, so scaling
-                // side alpha by 1.3 lifts side output +30% (RGB 1.44 + bloom 1.3) without
-                // touching the end-fade alpha on top/bottom.
-                float alphaFactor = normal.y == 0f ? 1.3f : 1f;
+                // Vertex alpha scales both emitted RGB and native bloom input, so only sides
+                // receive the extra 30%.
+                float alphaFactor = normal.y == 0f ? FloorSideEmissionScale : 1f;
                 for (int i = 0; i < 3; i++)
                 {
                     int sourceIndex = core.Triangles[triangle + i];

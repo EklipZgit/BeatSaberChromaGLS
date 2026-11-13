@@ -538,8 +538,10 @@ namespace ChromaGLS.Tests
 
         private static object serviceConfig(object service) => Service.GetField("_config", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
 
-        [Test]
-        public void RequestedQualityAppliesOnlyAfterSuccessfulDownload()
+        [TestCase("Low")]
+        [TestCase("High")]
+        [TestCase("Ultra")]
+        public void RequestedQualityAppliesOnlyAfterSuccessfulDownload(string choice)
         {
             string dir = TempDir();
             byte[] body = new byte[] { 0, 1, 2, 3 };
@@ -547,10 +549,10 @@ namespace ChromaGLS.Tests
             object service = CreateService(config, _ => { }, new StubHandler { Body = body }, dir, ManifestJson());
             Initialize(service);
             HookPrompts(service);
-            RequestQuality(service, "Low");
+            RequestQuality(service, choice);
             Task<bool> download = (Task<bool>)Service.GetMethod("DownloadAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, new object?[] { null, CancellationToken.None })!;
             Assert.IsTrue(download.Result);
-            Assert.AreEqual("Low", QualityProp.GetValue(config)!.ToString(), "the requested tier applies once the pack actually lands");
+            Assert.AreEqual(choice, QualityProp.GetValue(config)!.ToString(), "the requested tier applies once the pack actually lands");
         }
 
         [Test]
@@ -871,6 +873,92 @@ namespace ChromaGLS.Tests
             string message = (string)ui.InvokeMember("DescribeState", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.InvokeMethod | BindingFlags.OptionalParamBinding, null, null, new object?[] { missing, manifest, null, 0, true })!;
             StringAssert.Contains("Development", message);
             StringAssert.Contains("local", message);
+        }
+
+        [Test]
+        public void NeedsDownloadIsFalseWhileCheckingReadyOrUnavailable()
+        {
+            object config = Activator.CreateInstance(ConfigType, true)!;
+            object checking = CreateService(config, _ => { }, new StubHandler(), TempDir(), ManifestJson());
+            Assert.AreEqual("Checking", Enum.GetName(State, StateProp.GetValue(checking)!));
+            Assert.IsFalse(NeedsDownload(checking), "the button must stay hidden until verification resolves");
+
+            object unavailable = CreateService(config, _ => { }, new StubHandler(), TempDir(), "{not json");
+            Assert.AreEqual("Unavailable", Enum.GetName(State, StateProp.GetValue(unavailable)!));
+            Assert.IsFalse(NeedsDownload(unavailable), "a build without an actionable pack must not show the entry point");
+
+            string dir = TempDir();
+            File.WriteAllBytes(Path.Combine(dir, $"ChromaGLS-Ferrofluid-Reflections-{PayloadHash}.bundle"), new byte[] { 0, 1, 2, 3 });
+            object ready = CreateService(config, _ => { }, new StubHandler(), dir, ManifestJson());
+            Initialize(ready);
+            Assert.AreEqual("Ready", Enum.GetName(State, StateProp.GetValue(ready)!));
+            Assert.IsFalse(NeedsDownload(ready), "an installed pack needs no download entry");
+        }
+
+        [Test]
+        public void NeedsDownloadIsTrueForMissingDownloadingAndFailed()
+        {
+            object config = Activator.CreateInstance(ConfigType, true)!;
+            StubHandler handler = new();
+            object service = CreateService(config, _ => { }, handler, TempDir(), ManifestJson());
+            Initialize(service);
+            Assert.AreEqual("Missing", Enum.GetName(State, StateProp.GetValue(service)!));
+            Assert.IsTrue(NeedsDownload(service));
+
+            Task<bool> pending = Download(service);
+            Assert.AreEqual("Downloading", Enum.GetName(State, StateProp.GetValue(service)!));
+            Assert.IsTrue(NeedsDownload(service), "the button must stay visible so progress or cancel can be reopened");
+            handler.Release(new byte[] { 9, 9, 9, 9 });
+            Assert.IsFalse(pending.GetAwaiter().GetResult());
+            Assert.AreEqual("Failed", Enum.GetName(State, StateProp.GetValue(service)!));
+            Assert.IsTrue(NeedsDownload(service), "a failed download must keep a visible retry entry");
+        }
+
+        [Test]
+        public void NeedsDownloadFollowsInstalledBytes()
+        {
+            object config = Activator.CreateInstance(ConfigType, true)!;
+            string dir = TempDir();
+            string target = Path.Combine(dir, $"ChromaGLS-Ferrofluid-Reflections-{PayloadHash}.bundle");
+            File.WriteAllBytes(target, new byte[] { 9, 9, 9, 9 });
+            object corrupt = CreateService(config, _ => { }, new StubHandler(), dir, ManifestJson());
+            Initialize(corrupt);
+            Assert.AreEqual("Missing", Enum.GetName(State, StateProp.GetValue(corrupt)!));
+            Assert.IsTrue(NeedsDownload(corrupt), "out-of-date or corrupt installed bytes must surface the download entry");
+
+            File.WriteAllBytes(target, new byte[] { 0, 1, 2, 3 });
+            object intact = CreateService(config, _ => { }, new StubHandler(), dir, ManifestJson());
+            Initialize(intact);
+            Assert.AreEqual("Ready", Enum.GetName(State, StateProp.GetValue(intact)!));
+            Assert.IsFalse(NeedsDownload(intact), "bytes matching the expected manifest hash must hide the entry");
+        }
+
+        [Test]
+        public void StatusChangedFiresThroughInitializeAndDownloadTransitions()
+        {
+            object config = Activator.CreateInstance(ConfigType, true)!;
+            StubHandler handler = new();
+            object service = CreateService(config, _ => { }, handler, TempDir(), ManifestJson());
+            int notifications = 0;
+            Service.GetEvent("StatusChanged", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetAddMethod(true)!
+                .Invoke(service, new object[] { (Action)(() => notifications++) });
+            Initialize(service);
+            int afterInitialize = notifications;
+            Task<bool> pending = Download(service);
+            handler.Release(new byte[] { 0, 1, 2, 3 });
+            Assert.IsTrue(pending.GetAwaiter().GetResult());
+            Assert.AreEqual("Ready", Enum.GetName(State, StateProp.GetValue(service)!));
+            Assert.IsFalse(NeedsDownload(service));
+            Assert.Greater(afterInitialize, 0, "initialize resolving to Missing must raise StatusChanged");
+            Assert.Greater(notifications, afterInitialize, "the download transition back to Ready must raise StatusChanged");
+        }
+
+        private static bool NeedsDownload(object service)
+        {
+            PropertyInfo? prop = Service.GetProperty("NeedsDownload", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            Assert.NotNull(prop, "the pack service must expose a NeedsDownload flag for the settings button");
+            return (bool)prop!.GetValue(service)!;
         }
 
         private static Task<bool> Download(object service, CancellationToken cancel = default) =>

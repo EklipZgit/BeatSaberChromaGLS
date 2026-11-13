@@ -94,6 +94,7 @@ namespace ChromaGLS.Settings
         private static ChromaGlsRequirementEffect? _previewInstance;
         private static RectTransform? _previewAnchor;
         private static RequirementsUI? _lastRequirementsUi;
+        private static bool _menuActive = true;
         private static Config? _configuration;
         private static Vector2 _lastRequirementRectSize = PreviewFallbackRectSize;
 
@@ -168,9 +169,28 @@ namespace ChromaGLS.Settings
             _previewInstance?._simulation?.ApplyEnabledState(config);
         }
 
+        // Menu exit destroys the simulation-owning effects and releases their GPU resources.
+        // Keep the SongCore attachment and config. The settings UI registers a new preview anchor.
+        internal static void SetMenuActive(bool active)
+        {
+            _menuActive = active;
+            if (!active)
+            {
+                _previewAnchor = null;
+                DestroyExistingEffect();
+                DestroyPreviewEffect();
+                return;
+            }
+
+            ReconcileEffectLifetime();
+        }
+
         // Move the existing torus into the settings preview so only one simulation runs.
         internal static void CreatePreview(RectTransform previewAnchor)
         {
+            if (!_menuActive)
+                return;
+
             _previewAnchor = previewAnchor;
             _hasAttachedUnityState = true;
             ReconcileEffectLifetime();
@@ -211,7 +231,7 @@ namespace ChromaGLS.Settings
             }
 
             // The settings tab keeps the renderer while difficulty changes update the saved SongCore attachment.
-            if (!ShouldCreateEffect(_ferrofluidEnabled) || _configuration == null)
+            if (!_menuActive || !ShouldCreateEffect(_ferrofluidEnabled) || _configuration == null)
             {
                 DestroyExistingEffect();
                 return;
@@ -566,7 +586,7 @@ namespace ChromaGLS.Settings
                 return;
             }
 
-            if (!ShouldCreateEffect(_ferrofluidEnabled))
+            if (!_menuActive || !ShouldCreateEffect(_ferrofluidEnabled))
             {
                 if (_lastRequirementsUi != null)
                 {

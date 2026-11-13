@@ -23,6 +23,7 @@ namespace ChromaGLS.Settings
             "_BaseColorBoostThreshold",
             "_StereoCameraEyeOffset",
             "_FerrofluidMenuLightCount",
+            "_FerrofluidMenuLightSlicesPerArray",
         };
 
         private static readonly string[] GlobalVectorNames =
@@ -52,6 +53,13 @@ namespace ChromaGLS.Settings
             "_FerrofluidParabolaReflection",
             "_BloomPrePassTexture",
             "_FerrofluidMenuLightReflections",
+            "_FerrofluidMenuLightReflections1",
+            "_FerrofluidMenuLightReflections2",
+            "_FerrofluidMenuLightReflections3",
+            "_FerrofluidMenuLightReflections4",
+            "_FerrofluidMenuLightReflections5",
+            "_FerrofluidMenuLightReflections6",
+            "_FerrofluidMenuLightReflections7",
         };
 
 #if V1_29_1

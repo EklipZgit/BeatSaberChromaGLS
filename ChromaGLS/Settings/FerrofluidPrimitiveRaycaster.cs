@@ -45,7 +45,9 @@ namespace ChromaGLS.Settings
             foreach (RaycastResult candidate in hits)
             {
                 if (candidate.module is FerrofluidPrimitiveRaycaster primitive
-                    && winner.gameObject.transform.IsChildOf(primitive.transform))
+                    && (winner.gameObject.transform.IsChildOf(primitive.transform)
+                        || (primitive._effect.Grabbable != null
+                            && primitive._effect.Grabbable.OwnsColliderGameObject(winner.gameObject))))
                 {
                     return candidate;
                 }

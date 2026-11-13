@@ -97,6 +97,29 @@ internal sealed class FerrofluidDepthTests
     }
 
     [Test]
+    public void SetGrabDepthInputKeepsHeldBodiesIndependent()
+    {
+        Type grabbable = GetPluginType("ChromaGLS.Settings.FerrofluidGrabbable");
+        MethodInfo setDepth = grabbable.GetMethod("SetGrabDepthInput", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        BindingFlags inst = BindingFlags.Instance | BindingFlags.NonPublic;
+        object first = FormatterServices.GetUninitializedObject(grabbable);
+        object second = FormatterServices.GetUninitializedObject(grabbable);
+
+        setDepth.Invoke(first, [1]);
+        setDepth.Invoke(second, [-1]);
+        grabbable.GetField("_grabDepthHeldTime", inst)!.SetValue(first, 0.2f);
+        grabbable.GetField("_grabDepthHeldTime", inst)!.SetValue(second, 0.7f);
+
+        setDepth.Invoke(first, [0]);
+        Assert.That((int)grabbable.GetField("_grabDepthInput", inst)!.GetValue(second)!, Is.EqualTo(-1));
+        Assert.That((float)grabbable.GetField("_grabDepthHeldTime", inst)!.GetValue(second)!, Is.EqualTo(0.7f), "Neutral input on one body must not reset the other's ramp.");
+
+        setDepth.Invoke(first, [-1]);
+        Assert.That((int)grabbable.GetField("_grabDepthInput", inst)!.GetValue(second)!, Is.EqualTo(-1));
+        Assert.That((float)grabbable.GetField("_grabDepthHeldTime", inst)!.GetValue(second)!, Is.EqualTo(0.7f), "A reversal on one body must not reset the other's ramp.");
+    }
+
+    [Test]
     public void DepthButtonSamplingExistsOnInputOwner()
     {
         Type magnet = GetPluginType("ChromaGLS.Settings.FerrofluidMagnetController");

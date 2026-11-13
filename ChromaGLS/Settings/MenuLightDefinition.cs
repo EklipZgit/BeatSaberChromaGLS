@@ -72,12 +72,15 @@ namespace ChromaGLS.Settings
         [JsonProperty]
         public float RotationZ { get; set; }
 
-        internal void ConstrainToFloor()
+        internal float GetHeight()
+            => Type == MenuLightType.Floor ? Mathf.Clamp(Height, 0.001f, 2f) : Mathf.Clamp(Height, 0f, 7f);
+
+        internal void ConstrainPose()
         {
+            Height = GetHeight();
             if (Type != MenuLightType.Floor)
                 return;
 
-            Height = Mathf.Clamp(Height, 0.001f, 2f);
             Depth = Height;
             RotationX = 0f;
             RotationZ = 0f;

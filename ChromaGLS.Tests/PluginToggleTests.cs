@@ -66,7 +66,7 @@ internal sealed class PluginToggleTests
                 remainingAfterDisable.Select(GetMethodIdentity),
                 Is.EquivalentTo(expectedPersistent.Select(GetMethodIdentity)),
                 "Disabling must remove only the effect patches; the load-time data-annotation patch set must remain installed.");
-            MethodInfo neonSetOn = typeof(FlickeringNeonSign).GetMethod("SetOn", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            MethodInfo neonSetOn = typeof(FlickeringNeonSign).GetMethod("SetOn", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!;
             Assert.That(
                 remainingAfterDisable.Select(GetMethodIdentity),
                 Does.Contain(GetMethodIdentity(neonSetOn)),
@@ -119,8 +119,8 @@ internal sealed class PluginToggleTests
             .ToArray();
     }
 
-    // The session-cached-data regression only requires that these specific load-time annotation
-    // patches survive the toggle; every other patch class is an effect patch the toggle may remove.
+    // Load-time annotations and independent ferrofluid features stay patched when GLS effects
+    // are disabled.
     private static Type[] RequiredPersistentPatchTypes(Assembly pluginAssembly)
     {
         Type converterPatches = pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsConverterPatches", throwOnError: true)!;
@@ -139,6 +139,7 @@ internal sealed class PluginToggleTests
             pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsColorDistancePreparePatch", throwOnError: true)!,
             pluginAssembly.GetType("ChromaGLS.Settings.ChromaGlsRequirementSelectionPatch", throwOnError: true)!,
             pluginAssembly.GetType("ChromaGLS.HarmonyPatches.FerrofluidNeonSignPatch", throwOnError: true)!,
+            pluginAssembly.GetType("ChromaGLS.HarmonyPatches.FerrofluidPhysicsRaycastPatch", throwOnError: true)!,
         };
         // 1.29.1 has no fxEventsCollection, so its nested reader patch is compile-excluded there.
         Type? fxPatch = pluginAssembly.GetType("ChromaGLS.HarmonyPatches.GlsNodeEasingDeserializePatch+FloatFxPatch", throwOnError: false);

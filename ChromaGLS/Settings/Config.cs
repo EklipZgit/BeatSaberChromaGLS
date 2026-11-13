@@ -268,13 +268,13 @@ namespace ChromaGLS.Settings
 
         public virtual bool ParabolicFloorLightEnabled { get; set; } = true;
 
-        public virtual float ParabolicFloorLightBrightness { get; set; } = 0.43f;
+        public virtual float ParabolicFloorLightBrightness { get; set; } = ParabolicFloorLightSettings.FloorDefault.Brightness;
 
-        public virtual float ParabolicFloorLightRed { get; set; }
+        public virtual float ParabolicFloorLightRed { get; set; } = ParabolicFloorLightSettings.FloorDefault.Red;
 
-        public virtual float ParabolicFloorLightGreen { get; set; } = 0.86f;
+        public virtual float ParabolicFloorLightGreen { get; set; } = ParabolicFloorLightSettings.FloorDefault.Green;
 
-        public virtual float ParabolicFloorLightBlue { get; set; } = 2.47f;
+        public virtual float ParabolicFloorLightBlue { get; set; } = ParabolicFloorLightSettings.FloorDefault.Blue;
 
         public virtual float ParabolicFloorLightWidthScale { get; set; } = 3.2f;
 
@@ -284,18 +284,20 @@ namespace ChromaGLS.Settings
 
         public virtual float ParabolicFloorLightRotation { get; set; }
 
-        public virtual float ParabolicFloorLightLightWidthScale { get; set; } = 1f;
+        public virtual float ParabolicFloorLightLightWidthScale { get; set; } = ParabolicFloorLightSettings.FloorDefault.LightWidthScale;
 
-        public virtual float ParabolicFloorLightBloomWidthScale { get; set; } = 0.96f;
+        public virtual float ParabolicFloorLightBloomWidthScale { get; set; } = ParabolicFloorLightSettings.FloorDefault.BloomWidthScale;
 
-        public virtual float ParabolicFloorLightBloomBrightness { get; set; } = 1.25f;
+        public virtual float ParabolicFloorLightBloomBrightness { get; set; } = ParabolicFloorLightSettings.FloorDefault.BloomBrightness;
 
-        public virtual float ParabolicFloorLightHdrGlowThreshold { get; set; } = 1.3f;
+        public virtual float ParabolicFloorLightHdrGlowThreshold { get; set; } = ParabolicFloorLightSettings.FloorDefault.HdrGlowThreshold;
 
-        public virtual float ParabolicFloorLightHdrGlowWidthScale { get; set; } = 0.04f;
+        public virtual float ParabolicFloorLightHdrGlowWidthScale { get; set; } = ParabolicFloorLightSettings.FloorDefault.HdrGlowWidthScale;
 
         public virtual string MenuLightsJson { get; set; } = string.Empty;
 
-        public virtual float ParabolicFloorLightHdrGlowBrightness { get; set; } = 4f;
+        public virtual int MenuLightDefaultsVersion { get; set; }
+
+        public virtual float ParabolicFloorLightHdrGlowBrightness { get; set; } = ParabolicFloorLightSettings.FloorDefault.HdrGlowBrightness;
     }
 }

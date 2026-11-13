@@ -40,7 +40,7 @@ internal sealed class MenuLightGeometryTests
         object meshes = Create(light);
         Vector3[] vertices = Vertices(meshes, "Core");
         Assert.That(vertices.Max(vertex => vertex.y), Is.EqualTo(0f).Within(0.00001f));
-        Assert.That(vertices.Min(vertex => vertex.y), Is.EqualTo(-0.17f).Within(0.00001f));
+        Assert.That(vertices.Min(vertex => vertex.y), Is.EqualTo(-0.02f).Within(0.00001f), "floor depth follows height so the bottom stays floor-flush, stale Depth is ignored");
         Assert.That(Field<Vector3>(meshes, "Position").y, Is.EqualTo(0.02f).Within(0.00001f));
         Assert.That(Vertices(meshes, "Glow"), Is.Not.Empty);
         foreach (Vector3 vertex in Vertices(meshes, "Glow"))
@@ -56,7 +56,20 @@ internal sealed class MenuLightGeometryTests
     public void OnlyFloorGlowHoversOneMillimetreAboveTheFloor(string type, float coreTopExtra)
     {
         const float floor = 0.4f;
-        object meshes = Create(NewLight(type), new Vector3(0.5f, 0f, -0.2f), new Vector3(0.6f, 0f, 0.8f), floor);
+        object light = NewLight(type);
+        if (type == "Parabola")
+        {
+            Set(light, "Height", .006f);
+            Set(light, "Depth", .02f);
+            Set(light, "RotationX", 0f);
+            Set(light, "RotationZ", 0f);
+            Set(light, "QuaternionX", 0f);
+            Set(light, "QuaternionY", 0f);
+            Set(light, "QuaternionZ", 0f);
+            Set(light, "QuaternionW", 1f);
+        }
+
+        object meshes = Create(light, new Vector3(0.5f, 0f, -0.2f), new Vector3(0.6f, 0f, 0.8f), floor);
         Vector3 position = Field<Vector3>(meshes, "Position");
         Quaternion rotation = Field<Quaternion>(meshes, "Rotation");
         float height = type == "Floor" ? .02f : .006f;
@@ -103,12 +116,12 @@ internal sealed class MenuLightGeometryTests
         for (int station = 0; station < vertices.Length / 4; station++)
         {
             int corner = station * 4;
-            Assert.That(Vector3.Distance(vertices[corner], vertices[corner + 1]), Is.EqualTo(0.175f).Within(0.0001f));
+            Assert.That(Vector3.Distance(vertices[corner], vertices[corner + 1]), Is.EqualTo(0.18375f).Within(0.0001f));
         }
     }
 
     [Test]
-    public void ParabolaFadeStartChangesSourceTransparency()
+    public void ParabolaFadeStartChangesSourceEmission()
     {
         object light = NewLight("Parabola");
         Set(light, "EndLength", 2f);
@@ -117,9 +130,37 @@ internal sealed class MenuLightGeometryTests
         Set(light, "FadeStart", 0.8f);
         Color[] late = Colors(Create(light), "Core");
         Assert.That(early[84 * 4].a, Is.LessThan(late[84 * 4].a));
-        Assert.That(early[0].a, Is.EqualTo(0f).Within(0.00001f));
-        Assert.That(late[late.Length - 1].a, Is.EqualTo(0f).Within(0.00001f));
+        Assert.That(early[0].a, Is.EqualTo(0.1f).Within(0.00001f));
+        Assert.That(late[late.Length - 1].a, Is.EqualTo(0.1f).Within(0.00001f));
         Assert.That(early[48 * 4].a, Is.EqualTo(1f).Within(0.00001f));
+    }
+
+    [TestCase("Parabola")]
+    [TestCase("Floor")]
+    public void FadedRibbonEndsKeepAMinimumEmission(string type)
+    {
+        object light = NewLight(type);
+        Set(light, "EndLength", 2f);
+        Set(light, "FadeStart", 0.13f);
+        float[] earlyStations = StationEmission(type, Create(light), "Core");
+        Set(light, "FadeStart", 0.8f);
+        float[] lateStations = StationEmission(type, Create(light), "Core");
+        Assert.That(earlyStations.Min(), Is.EqualTo(0.1f).Within(0.00001f));
+        Assert.That(earlyStations.Max(), Is.EqualTo(1f).Within(0.00001f));
+        Assert.That(earlyStations[0], Is.EqualTo(0.1f).Within(0.00001f), "the first physical end must keep residual emission");
+        Assert.That(earlyStations[earlyStations.Length - 1], Is.EqualTo(0.1f).Within(0.00001f), "the last physical end must keep residual emission");
+        int branch = earlyStations.Length / 2;
+        for (int station = 1; station <= branch; station++)
+        {
+            Assert.That(earlyStations[station - 1], Is.LessThanOrEqualTo(earlyStations[station] + 0.00001f), "emission must fall monotonically from the apex");
+            Assert.That(earlyStations[earlyStations.Length - station], Is.LessThanOrEqualTo(earlyStations[earlyStations.Length - 1 - station] + 0.00001f));
+        }
+
+        Assert.That(earlyStations[84], Is.LessThan(lateStations[84]), "an early fade start must dim a fixed interior station more");
+
+        float[] reflection = StationEmission(type, Create(light), "ReflectionCore");
+        Assert.That(reflection.Min(), Is.EqualTo(0.1f).Within(0.00001f));
+        Assert.That(reflection.Max(), Is.EqualTo(1f).Within(0.00001f));
     }
 
     [TestCase("Parabola")]
@@ -288,8 +329,11 @@ internal sealed class MenuLightGeometryTests
         Set(light, "EndLength", 2f);
         float Reach()
         {
+            // Compare one station's broad-band outer edge to its own emitter boundary; global
+            // X maxima can sit at different stations when width changes.
             object meshes = Create(light);
-            return Vertices(meshes, "Glow").Max(vertex => vertex.x) - Vertices(meshes, "Core").Max(vertex => vertex.x);
+            Vector3[] glow = Vertices(meshes, "Glow");
+            return Vector3.Distance(glow[(48 * 14) + 0], glow[(48 * 14) + 6]);
         }
 
         ChangeAppearance(light, "WithLightWidthScale", 0.25f);
@@ -305,8 +349,9 @@ internal sealed class MenuLightGeometryTests
     public void SourceTipTransparencyDoesNotCopyTheSameMaskIntoFloorSpill()
     {
         object meshes = Create(NewLight("Floor"));
-        Assert.That(Colors(meshes, "Core")[0].a, Is.EqualTo(0f));
+        Assert.That(Colors(meshes, "Core")[0].a, Is.EqualTo(0.1f).Within(0.00001f));
         Assert.That(Colors(meshes, "Glow")[7].a, Is.GreaterThan(0f), "spill must extend smoothly from nearby source samples");
+        Assert.That(Colors(meshes, "Glow")[7].a, Is.LessThan(0.1f), "spill keeps fading to zero past the residual core emission");
     }
 
     [TestCase("Parabola")]
@@ -401,6 +446,34 @@ internal sealed class MenuLightGeometryTests
 
     private static int[] Triangles(object meshes, string layer)
         => Field<int[]>(Field<object>(meshes, layer), "Triangles");
+
+    private static float[] StationEmission(string type, object meshes, string layer)
+    {
+        Vector3[] vertices = Vertices(meshes, layer);
+        Vector2[] uvs = Field<Vector2[]>(Field<object>(meshes, layer), "UV");
+        Color[] colors = Colors(meshes, layer);
+        int[] triangles = Triangles(meshes, layer);
+        float step = uvs.Where(uv => uv.x > 0.0001f).Min(uv => uv.x);
+        int stations = (int)Mathf.Round(1f / step) + 1;
+        float[] alphas = new float[stations];
+        bool sideScale = type == "Floor";
+        for (int triangle = 0; triangle < triangles.Length; triangle += 3)
+        {
+            Vector3 a = vertices[triangles[triangle]];
+            Vector3 b = vertices[triangles[triangle + 1]];
+            Vector3 c = vertices[triangles[triangle + 2]];
+            Vector3 normal = Vector3.Cross(b - a, c - a);
+            float scale = sideScale && Mathf.Abs(normal.y) < 0.0001f ? 1.3f : 1f;
+            for (int corner = 0; corner < 3; corner++)
+            {
+                int index = triangles[triangle + corner];
+                int station = (int)Mathf.Round(uvs[index].x * (stations - 1));
+                alphas[station] = colors[index].a / scale;
+            }
+        }
+
+        return alphas;
+    }
 
     private static void AssertVector(Vector3 actual, Vector3 expected)
         => Assert.That(Vector3.Distance(actual, expected), Is.LessThan(0.0001f), $"expected {expected}, got {actual}");

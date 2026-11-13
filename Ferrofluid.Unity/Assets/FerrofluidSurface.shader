@@ -35,6 +35,7 @@ Shader "ChromaGLS/FerrofluidSurface"
         [HideInInspector] _RestPositionTex ("Rest Position", 2D) = "white" {}
         [HideInInspector] _DensityPressureTex ("Density Pressure", 2D) = "white" {}
         [HideInInspector] _SurfaceNormalTex ("Surface Normal Cache", 2D) = "black" {}
+        [HideInInspector] _SurfacePositionTex ("Surface Position Cache", 2D) = "black" {}
     }
 
     SubShader
@@ -45,9 +46,11 @@ Shader "ChromaGLS/FerrofluidSurface"
         #pragma target 5.0
         #include "UnityCG.cginc"
         #include "FerrofluidCommon.cginc"
+        #include "FerrofluidSurfaceCorrespondence.cginc"
 
         sampler2D _HeightMapTex;
         sampler2D _SurfaceNormalTex;
+        sampler2D _SurfacePositionTex;
         float _SurfaceNormalLogicalSize;
         float4 _HeightMapTex_TexelSize;
         sampler2D _SpringStateTex;
@@ -71,6 +74,18 @@ Shader "ChromaGLS/FerrofluidSurface"
         float _FerrofluidParabolaReflectionY;
         float _FerrofluidParabolaReflectionEnabled;
         UNITY_DECLARE_TEX2DARRAY(_FerrofluidMenuLightReflections);
+#if defined(FERROFLUID_SPLIT_MENU_LIGHT_REFLECTIONS)
+        // Extra banks share the first array's sampler so the collection stays under the
+        // sampler limit while every resource remains below the guaranteed bound.
+        UNITY_DECLARE_TEX2DARRAY_NOSAMPLER(_FerrofluidMenuLightReflections1);
+        UNITY_DECLARE_TEX2DARRAY_NOSAMPLER(_FerrofluidMenuLightReflections2);
+        UNITY_DECLARE_TEX2DARRAY_NOSAMPLER(_FerrofluidMenuLightReflections3);
+        UNITY_DECLARE_TEX2DARRAY_NOSAMPLER(_FerrofluidMenuLightReflections4);
+        UNITY_DECLARE_TEX2DARRAY_NOSAMPLER(_FerrofluidMenuLightReflections5);
+        UNITY_DECLARE_TEX2DARRAY_NOSAMPLER(_FerrofluidMenuLightReflections6);
+        UNITY_DECLARE_TEX2DARRAY_NOSAMPLER(_FerrofluidMenuLightReflections7);
+        int _FerrofluidMenuLightSlicesPerArray;
+#endif
         int _FerrofluidMenuLightCount;
         float4x4 _FerrofluidMenuLightWorldToLocal[8];
         float4 _FerrofluidMenuLightBounds[8];
@@ -143,6 +158,31 @@ Shader "ChromaGLS/FerrofluidSurface"
         float _SpikeSpringStrength;
         float _SpikeSpringDamping;
         float _DeltaTimeMilliseconds;
+
+#if defined(FERROFLUID_SPLIT_MENU_LIGHT_REFLECTIONS)
+        // SM5 cannot index texture resources dynamically, so pick the owning bank with
+        // explicit uniform branches; the slice index wraps within the bank's capacity.
+        float3 FerrofluidSampleMenuLightBank(int lightIndex, float2 lightUV, float2 lightUVx, float2 lightUVy)
+        {
+            int bank = lightIndex / _FerrofluidMenuLightSlicesPerArray;
+            float3 uvw = float3(lightUV, lightIndex - bank * _FerrofluidMenuLightSlicesPerArray);
+            if (bank == 0)
+                return _FerrofluidMenuLightReflections.SampleGrad(sampler_FerrofluidMenuLightReflections, uvw, lightUVx, lightUVy).rgb;
+            if (bank == 1)
+                return _FerrofluidMenuLightReflections1.SampleGrad(sampler_FerrofluidMenuLightReflections, uvw, lightUVx, lightUVy).rgb;
+            if (bank == 2)
+                return _FerrofluidMenuLightReflections2.SampleGrad(sampler_FerrofluidMenuLightReflections, uvw, lightUVx, lightUVy).rgb;
+            if (bank == 3)
+                return _FerrofluidMenuLightReflections3.SampleGrad(sampler_FerrofluidMenuLightReflections, uvw, lightUVx, lightUVy).rgb;
+            if (bank == 4)
+                return _FerrofluidMenuLightReflections4.SampleGrad(sampler_FerrofluidMenuLightReflections, uvw, lightUVx, lightUVy).rgb;
+            if (bank == 5)
+                return _FerrofluidMenuLightReflections5.SampleGrad(sampler_FerrofluidMenuLightReflections, uvw, lightUVx, lightUVy).rgb;
+            if (bank == 6)
+                return _FerrofluidMenuLightReflections6.SampleGrad(sampler_FerrofluidMenuLightReflections, uvw, lightUVx, lightUVy).rgb;
+            return _FerrofluidMenuLightReflections7.SampleGrad(sampler_FerrofluidMenuLightReflections, uvw, lightUVx, lightUVy).rgb;
+        }
+#endif
 
         float3 FerrofluidRoomColor(float3 color)
         {
@@ -1143,10 +1183,27 @@ Shader "ChromaGLS/FerrofluidSurface"
                     float2 lightUVx = ddx(lightUV);
                     float2 lightUVy = ddy(lightUV);
                     // Sampling inside the hit-test branch returns black in the room-disabled D3D11 variants.
+                #if defined(FERROFLUID_SPLIT_MENU_LIGHT_REFLECTIONS)
+                    float3 lightSample = FerrofluidSampleMenuLightBank(lightIndex, lightUV, lightUVx, lightUVy);
+                #else
                     float3 lightSample = _FerrofluidMenuLightReflections.SampleGrad(sampler_FerrofluidMenuLightReflections, float3(lightUV, lightIndex), lightUVx, lightUVy).rgb;
+                #endif
                     [branch]
                     if (abs(localRay.y) > 0.0001 && hitT > 0.0 && all(lightUV >= 0.0) && all(lightUV <= 1.0))
+                    {
+                        // A floor light's vertical faces emit more than its top. Approximate the
+                        // directional response with cos^2 against the local in-plane side
+                        // normal so the reflected floor reads bright at grazing angles.
+                        if (_FerrofluidMenuLightFlags[lightIndex].y > 0.0)
+                        {
+                            float slope = _FerrofluidMenuLightFlags[lightIndex].z * localHit.x;
+                            float sideDot = slope * localRay.x - localRay.z;
+                            float sideWeight = saturate(sideDot * sideDot / (1.0 + slope * slope));
+                            lightSample *= 1.0 + _FerrofluidMenuLightFlags[lightIndex].y * sideWeight;
+                        }
+
                         collection += lightSample;
+                    }
                 }
                 float3 collectionLuma = dot(collection, float3(0.2126, 0.7152, 0.0722)).xxx;
                 radiance += lerp(collectionLuma, collection, _FerrofluidReflectionStrengths.w) * _FerrofluidReflectionStrengths.z;
@@ -1231,7 +1288,7 @@ Shader "ChromaGLS/FerrofluidSurface"
         }
 
         // Filtered bicubic sample of the baked continuous normal/film cache (beauty path only).
-        float4 FerrofluidSampleNormalCache(float2 uv)
+        float4 FerrofluidSampleSurfaceCache(sampler2D cacheTexture, float2 uv)
         {
             float size = _SurfaceNormalLogicalSize;
             float2 q = uv * size - 0.5;
@@ -1249,10 +1306,15 @@ Shader "ChromaGLS/FerrofluidSurface"
                 for (int j = 0; j < 2; j++)
                 {
                     float2 pos = float2(b.x + ox[i] + 2.5, b.y + oy[j] + 2.5) * inv;
-                    sum += tex2D(_SurfaceNormalTex, pos) * (gx[i] * gy[j]);
+                    sum += tex2D(cacheTexture, pos) * (gx[i] * gy[j]);
                 }
             }
             return sum;
+        }
+
+        float4 FerrofluidSampleNormalCache(float2 uv)
+        {
+            return FerrofluidSampleSurfaceCache(_SurfaceNormalTex, uv);
         }
 
         struct FerrofluidNormalCacheVaryings
@@ -1274,29 +1336,41 @@ Shader "ChromaGLS/FerrofluidSurface"
             return output;
         }
 
-        float4 FerrofluidNormalCacheFragment(FerrofluidNormalCacheVaryings input) : SV_Target
+        struct FerrofluidNormalCacheOutput
+        {
+            float4 normal : SV_Target0;
+            float4 position : SV_Target1;
+        };
+
+        FerrofluidNormalCacheOutput FerrofluidNormalCacheFragment(FerrofluidNormalCacheVaryings input)
         {
             float size = _SurfaceNormalLogicalSize;
             float2 queryUv = (input.uv * (size + 4) - 2) / size;
             FerrofluidSurfaceInput surfaceInput = (FerrofluidSurfaceInput)0;
             surfaceInput.uv = SurfaceHeightUv(queryUv);
             FerrofluidSurfaceVaryings exact = FerrofluidSurfaceVertex(surfaceInput);
-            return float4(exact.worldNormal, exact.spikeHeight);
+            FerrofluidNormalCacheOutput output;
+            output.normal = float4(exact.worldNormal, exact.spikeHeight);
+            output.position = float4(exact.worldPosition, 0);
+            return output;
         }
 
         float4 FerrofluidSurfaceFragment(FerrofluidSurfaceVaryings input, fixed facing : VFACE) : SV_Target
         {
             UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-            #if defined(FERROFLUID_CACHED_NORMALS)
-            float4 cachedNormal = FerrofluidSampleNormalCache(input.surfaceUv);
-            input.worldNormal = cachedNormal.rgb;
-            input.spikeHeight = cachedNormal.a;
-            #endif
             // Each eye needs its own view direction for reflections and thin-film highlights.
             #if defined(USING_STEREO_MATRICES)
             float3 cameraPosition = unity_StereoWorldSpaceCameraPos[unity_StereoEyeIndex];
             #else
             float3 cameraPosition = _WorldSpaceCameraPos.xyz;
+            #endif
+            #if defined(FERROFLUID_CACHED_NORMALS)
+            float3 fieldPosition = FerrofluidSampleSurfaceCache(_SurfacePositionTex, input.surfaceUv).xyz;
+            // The corrected UV can leave the chart; fold it like the bake's padding queries.
+            input.surfaceUv = SurfaceHeightUv(FerrofluidCorrectSurfaceUv(input.surfaceUv, input.worldPosition, fieldPosition, cameraPosition, _SurfaceNormalLogicalSize));
+            float4 cachedNormal = FerrofluidSampleNormalCache(input.surfaceUv);
+            input.worldNormal = cachedNormal.rgb;
+            input.spikeHeight = cachedNormal.a;
             #endif
             return FerrofluidShadeSurface(input, facing, cameraPosition);
         }
@@ -1354,6 +1428,7 @@ Shader "ChromaGLS/FerrofluidSurface"
             #pragma multi_compile_local _ FERROFLUID_CACHED_DEFORMATION
             #pragma multi_compile_local _ FERROFLUID_CACHED_NORMALS
             #pragma multi_compile _ FERROFLUID_ROOM_REFLECTIONS FERROFLUID_NO_REFLECTIONS
+            #pragma multi_compile _ FERROFLUID_SPLIT_MENU_LIGHT_REFLECTIONS
             #pragma multi_compile _ FERROFLUID_ENVIRONMENT_CAPTURE
             ENDCG
         }
@@ -1430,6 +1505,7 @@ Shader "ChromaGLS/FerrofluidSurface"
             #pragma vertex FerrofluidShadingValidationVertex
             #pragma fragment FerrofluidShadingValidationFragment
             #pragma multi_compile _ FERROFLUID_ROOM_REFLECTIONS FERROFLUID_NO_REFLECTIONS
+            #pragma multi_compile _ FERROFLUID_SPLIT_MENU_LIGHT_REFLECTIONS
             #pragma multi_compile _ FERROFLUID_ENVIRONMENT_CAPTURE
             ENDCG
         }

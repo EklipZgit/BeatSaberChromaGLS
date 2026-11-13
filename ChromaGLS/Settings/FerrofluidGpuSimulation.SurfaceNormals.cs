@@ -10,9 +10,12 @@ namespace ChromaGLS.Settings
         private const int SurfaceNormalLogicalSize = 512;
         private const int SurfaceNormalPadding = 2;
         private static readonly int SurfaceNormalTextureId = Shader.PropertyToID("_SurfaceNormalTex");
+        private static readonly int SurfacePositionTextureId = Shader.PropertyToID("_SurfacePositionTex");
         private static readonly int SurfaceNormalLogicalSizeId = Shader.PropertyToID("_SurfaceNormalLogicalSize");
 
         private RenderTexture? _surfaceNormalCache;
+        private RenderTexture? _surfacePositionCache;
+        private RenderTargetIdentifier[]? _surfaceCacheTargets;
         private CommandBuffer? _surfaceNormalCommands;
         private int _surfaceNormalPass = -1;
         private bool _useSurfaceNormals;
@@ -52,11 +55,27 @@ namespace ChromaGLS.Settings
                 useMipMap = false,
             };
             _surfaceNormalCache.Create();
+            _surfacePositionCache = new RenderTexture(
+                SurfaceNormalLogicalSize + (2 * SurfaceNormalPadding),
+                SurfaceNormalLogicalSize + (2 * SurfaceNormalPadding),
+                0,
+                RenderTextureFormat.ARGBFloat,
+                RenderTextureReadWrite.Linear)
+            {
+                name = "ChromaGLS Ferrofluid Surface Positions",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                useMipMap = false,
+            };
+            _surfacePositionCache.Create();
+            _surfaceCacheTargets = new[] { (RenderTargetIdentifier)_surfaceNormalCache, (RenderTargetIdentifier)_surfacePositionCache };
             _surfaceNormalCommands = new CommandBuffer { name = "ChromaGLS Ferrofluid Surface Normals" };
             _surfaceMaterial.SetFloat(SurfaceNormalLogicalSizeId, SurfaceNormalLogicalSize);
             RecordSnapshotFloat(_surfaceMaterial, SurfaceNormalLogicalSizeId, SurfaceNormalLogicalSize);
             _surfaceMaterial.SetTexture(SurfaceNormalTextureId, _surfaceNormalCache);
             RecordSnapshotTexture(_surfaceMaterial, SurfaceNormalTextureId, _surfaceNormalCache);
+            _surfaceMaterial.SetTexture(SurfacePositionTextureId, _surfacePositionCache);
+            RecordSnapshotTexture(_surfaceMaterial, SurfacePositionTextureId, _surfacePositionCache);
             _surfaceNormalsReady = false;
         }
 
@@ -73,7 +92,7 @@ namespace ChromaGLS.Settings
             try
             {
                 _surfaceNormalCommands!.Clear();
-                _surfaceNormalCommands.SetRenderTarget(_surfaceNormalCache!);
+                _surfaceNormalCommands.SetRenderTarget(_surfaceCacheTargets!, BuiltinRenderTextureType.None);
                 _surfaceNormalCommands.DrawProcedural(
                     _renderer.localToWorldMatrix,
                     _surfaceMaterial,
@@ -99,6 +118,9 @@ namespace ChromaGLS.Settings
             _surfaceMaterial.DisableKeyword("FERROFLUID_CACHED_NORMALS");
             _surfaceMaterial.SetTexture(SurfaceNormalTextureId, (Texture?)null);
             RecordSnapshotTexture(_surfaceMaterial, SurfaceNormalTextureId, null);
+            _surfaceMaterial.SetTexture(SurfacePositionTextureId, (Texture?)null);
+            RecordSnapshotTexture(_surfaceMaterial, SurfacePositionTextureId, null);
+            _surfaceCacheTargets = null;
             if (_surfaceNormalCommands != null)
             {
                 _surfaceNormalCommands.Release();
@@ -110,6 +132,13 @@ namespace ChromaGLS.Settings
                 _surfaceNormalCache.Release();
                 UnityEngine.Object.Destroy(_surfaceNormalCache);
                 _surfaceNormalCache = null;
+            }
+
+            if (_surfacePositionCache != null)
+            {
+                _surfacePositionCache.Release();
+                UnityEngine.Object.Destroy(_surfacePositionCache);
+                _surfacePositionCache = null;
             }
 
             _surfaceNormalPass = -1;

@@ -320,8 +320,8 @@ namespace ChromaGLS.Settings
         {
             try
             {
-                InitializeSceneLifecycle();
-                InitializeCore();
+                if (_menuActive)
+                    InitializeCore();
             }
             catch (Exception exception)
             {
@@ -349,29 +349,21 @@ namespace ChromaGLS.Settings
                 return;
 
             _menuActive = active;
-            SetEnabled(_config.ParabolicFloorLightEnabled);
-            if (!active && _previewId != null)
-                Restore(_previewId);
-        }
+            if (!active)
+            {
+                ReleaseRuntimeResources();
+                return;
+            }
 
-        internal void InitializeSceneLifecycle()
-        {
-            SceneManager.sceneLoaded += HandleSceneLoaded;
-            SceneManager.activeSceneChanged += HandleActiveSceneChanged;
-        }
-
-        private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
-        {
-            if (scene.name == "GameCore")
-                SetMenuActive(false);
-        }
-
-        private void HandleActiveSceneChanged(Scene previous, Scene next)
-        {
-            if (next.name == "GameCore")
-                SetMenuActive(false);
-            else if (next.name == "MainMenu")
-                SetMenuActive(true);
+            try
+            {
+                InitializeCore();
+            }
+            catch (Exception exception)
+            {
+                ReleaseRuntimeResources();
+                Plugin.Log.Error($"[ChromaGLS Menu Lights] menu return rebuild failed; lights disabled for this menu session. {exception}");
+            }
         }
 
         internal void SetReflectionQuality(ReflectionQuality quality)
@@ -527,8 +519,13 @@ namespace ChromaGLS.Settings
                 _packService = null;
             }
 
-            SceneManager.sceneLoaded -= HandleSceneLoaded;
-            SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
+            ReleaseRuntimeResources();
+        }
+
+        // Releases every GPU/menu-scoped object while keeping the store, config and
+        // quality subscriptions so a menu return can rebuild from saved state.
+        private void ReleaseRuntimeResources()
+        {
             _canCreate = false;
             _enabled = false;
             foreach (MenuLightRenderer renderer in _renderers.Values)
@@ -546,6 +543,10 @@ namespace ChromaGLS.Settings
                 _reflectionCache.Dispose();
                 _reflectionCache = null;
             }
+
+            _shader = null;
+            _renderBloom = null;
+            _mainEffectContainer = null;
         }
 
         private void InitializeCore()

@@ -67,26 +67,66 @@ internal sealed class FerrofluidControllerTests
 
         object leftHand = new();
         object rightHand = new();
+        object ownership = CreateOwnership();
 
-        object[] held = [leftHand, rightHand, false, leftHand, rightHand, null!, null!];
+        object[] held = [ownership, leftHand, rightHand, false, leftHand, rightHand, null!, null!];
         route!.Invoke(null, held);
-        Assert.That(held[5], Is.SameAs(leftHand), "The holding hand is dominant for its body regardless of pointer selection.");
-        Assert.That(held[6], Is.SameAs(rightHand), "The other hand supplies the spin role.");
+        Assert.That(held[6], Is.SameAs(leftHand), "The holding hand is dominant for its body regardless of pointer selection.");
+        Assert.That(held[7], Is.SameAs(rightHand), "The other hand supplies the spin role.");
 
-        object[] swapped = [rightHand, leftHand, true, leftHand, rightHand, null!, null!];
+        object[] swapped = [ownership, rightHand, leftHand, true, leftHand, rightHand, null!, null!];
         route.Invoke(null, swapped);
-        Assert.That(swapped[5], Is.SameAs(rightHand));
-        Assert.That(swapped[6], Is.SameAs(leftHand));
+        Assert.That(swapped[6], Is.SameAs(rightHand));
+        Assert.That(swapped[7], Is.SameAs(leftHand));
 
-        object[] hovered = [null!, rightHand, true, leftHand, rightHand, null!, null!];
+        object[] hovered = [ownership, null!, rightHand, true, leftHand, rightHand, null!, null!];
         route.Invoke(null, hovered);
-        Assert.That(hovered[5], Is.SameAs(rightHand));
-        Assert.That(hovered[6], Is.SameAs(leftHand));
+        Assert.That(hovered[6], Is.SameAs(rightHand));
+        Assert.That(hovered[7], Is.SameAs(leftHand));
 
-        object[] unrelated = [null!, rightHand, false, leftHand, rightHand, null!, null!];
+        object[] unrelated = [ownership, null!, rightHand, false, leftHand, rightHand, null!, null!];
         route.Invoke(null, unrelated);
-        Assert.That(unrelated[5], Is.Null, "A body with no owner and no hover must not receive stick input.");
-        Assert.That(unrelated[6], Is.Null);
+        Assert.That(unrelated[6], Is.Null, "A body with no owner and no hover must not receive stick input.");
+        Assert.That(unrelated[7], Is.Null);
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void ControllerRoutingBlocksSpinInputFromABusyHand(bool leftDominant)
+    {
+        MethodInfo route = GetPhysicsMethod("RouteControllerInput");
+        Assert.That(route, Is.Not.Null, "Each body must route the dominant stick from its owner, or the selected pointer when unheld and hovered.");
+        Type ownershipType = GetPluginType("ChromaGLS.Settings.FerrofluidGrabOwnership");
+        object leftHand = new();
+        object rightHand = new();
+        object cubeTarget = new();
+        object sphereTarget = new();
+        object ownership = CreateOwnership();
+        MethodInfo acquire = ownershipType
+            .GetMethod("TryAcquire", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        object dominantHand = leftDominant ? leftHand : rightHand;
+        object otherHand = leftDominant ? rightHand : leftHand;
+        Assert.That(acquire.Invoke(ownership, [dominantHand, cubeTarget]), Is.True);
+        Assert.That(acquire.Invoke(ownership, [otherHand, sphereTarget]), Is.True);
+
+        // The dominant hand holds the cube; the other already holds the sphere, so no hand is free for spin.
+        object[] bothHeld = [ownership, dominantHand, leftHand, false, leftHand, rightHand, null!, null!];
+        route!.Invoke(null, bothHeld);
+        Assert.That(bothHeld[6], Is.SameAs(dominantHand), "The owning hand stays dominant for its body.");
+        Assert.That(bothHeld[7], Is.Null, "A hand already holding a target must not also supply the spin role.");
+
+        // A hovered free body must not borrow spin from the busy hand either.
+        object[] hovered = [ownership, null!, dominantHand, true, leftHand, rightHand, null!, null!];
+        route.Invoke(null, hovered);
+        Assert.That(hovered[7], Is.Null, "A hovered body must not borrow spin input from a busy hand.");
+
+        // Releasing the sphere frees the other hand for spin again.
+        ownershipType
+            .GetMethod("ReleaseTarget", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(ownership, [sphereTarget]);
+        object[] freed = [ownership, dominantHand, leftHand, false, leftHand, rightHand, null!, null!];
+        route.Invoke(null, freed);
+        Assert.That(freed[7], Is.SameAs(otherHand), "Releasing the other grip restores the spin role.");
     }
 
     [TestCase(true)]
@@ -306,4 +346,9 @@ internal sealed class FerrofluidControllerTests
         return Assembly.Load("ChromaGLS").GetType(typeName, throwOnError: false)
             ?? throw new AssertionException($"Missing plugin type: {typeName}");
     }
+
+    private static object CreateOwnership()
+        => Activator.CreateInstance(
+            GetPluginType("ChromaGLS.Settings.FerrofluidGrabOwnership"),
+            nonPublic: true)!;
 }

@@ -20,6 +20,7 @@ $Outputs = @(
 $HashManifestPath = $OutputPath + ".sources.sha256"
 $SourceInputs = @(
     [pscustomobject]@{ Key = "common-hlsl"; Path = (Join-Path $ProjectPath "Assets/FerrofluidCommon.cginc") },
+    [pscustomobject]@{ Key = "surface-correspondence-hlsl"; Path = (Join-Path $ProjectPath "Assets/FerrofluidSurfaceCorrespondence.cginc") },
     [pscustomobject]@{ Key = "simulation-shader"; Path = (Join-Path $ProjectPath "Assets/FerrofluidSimulation.shader") },
     [pscustomobject]@{ Key = "surface-shader"; Path = (Join-Path $ProjectPath "Assets/FerrofluidSurface.shader") },
     [pscustomobject]@{ Key = "floor-shadow-shader"; Path = (Join-Path $ProjectPath "Assets/FerrofluidFloorShadow.shader") },

@@ -1,15 +1,17 @@
 <modal id='menu-lights-modal' show-event='show-menu-lights' hide-event='hide-menu-lights' click-off-closes='false' move-to-center='true' size-delta-x='110' size-delta-y='80'>
     <vertical pad='2' spacing='1' preferred-height='76' horizontal-fit='Unconstrained' vertical-fit='Unconstrained' child-align='UpperCenter' child-control-width='true' child-expand-width='true' child-control-height='true' child-expand-height='false'>
-        <horizontal spacing='2' preferred-height='8' min-height='8' flexible-height='0' child-control-width='true' child-expand-width='false' child-control-height='true' child-expand-height='false'>
-            <text text='Menu lights' font-size='5' font-style='Bold' preferred-width='78' flexible-width='1'/>
-            <button text='Close' on-click='light-list-close' preferred-width='22' flexible-width='0'/>
+        <horizontal spacing='2' pad-right='24' preferred-height='8' min-height='8' flexible-height='0' child-control-width='true' child-expand-width='false' child-control-height='true' child-expand-height='false'>
+            <text text='Menu lights' font-size='5' font-style='Bold' preferred-width='0' flexible-width='1'/>
         </horizontal>
         <dropdown-list-setting id='reflection-quality-dropdown' text='Reflections Quality' value='reflection-quality' choices='reflection-quality-options' apply-on-change='true' preferred-height='8' min-height='8' flexible-height='0'/>
         <horizontal preferred-height='7' min-height='7' flexible-height='0' child-align='MiddleLeft' child-control-width='true' child-expand-width='false' child-control-height='true' child-expand-height='false'>
             <button id='add-light' text='Add Light' on-click='light-add' preferred-width='30' preferred-height='7' flexible-width='0'/>
+            <button id='default-floor-light' text='Default Floor' on-click='light-default' preferred-width='32' preferred-height='7' flexible-width='0' font-size='3'/>
+            <button id='default-raised-light' text='Default Upper' on-click='light-default-raised' preferred-width='32' preferred-height='7' flexible-width='0' font-size='3'/>
         </horizontal>
         <scroll-view preferred-height='45' min-height='45' flexible-height='0'>
             <vertical id='menu-light-rows' preferred-width='96' spacing='1' horizontal-fit='PreferredSize' vertical-fit='PreferredSize' child-align='UpperCenter' child-control-width='true' child-expand-width='true' child-control-height='true' child-expand-height='false'/>
         </scroll-view>
     </vertical>
+    <button id='light-list-close-button' text='Close' on-click='light-list-close' anchor-min-x='1' anchor-min-y='1' anchor-max-x='1' anchor-max-y='1' pivot-x='1' pivot-y='1' anchored-position-x='-2' anchored-position-y='-2' size-delta-x='22' size-delta-y='7'/>
 </modal>

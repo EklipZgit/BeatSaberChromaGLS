@@ -168,6 +168,30 @@ namespace ChromaGLS.FerrofluidBundle
                 if (actual.maxColorComponent <= 0f)
                     throw new Exception("Bound pack room produced black radiance.");
 
+                // Ultra reuses the High pack assets: the load must succeed and publish the same dimensions.
+                Task<bool> ultraLoad = (Task<bool>)resourceType.GetMethod("TryLoadReflectionsAsync", InstanceFlags).Invoke(resources, new[] { Enum.Parse(qualityType, "Ultra") });
+                while (!ultraLoad.IsCompleted)
+                    yield return null;
+                if (!ultraLoad.Result)
+                    throw new Exception("Configured pack path must load Ultra reflection assets.");
+                object ultraOn = resourceType.GetProperty("RoomEnvironmentOn", InstanceFlags).GetValue(resources);
+                object ultraOff = resourceType.GetProperty("RoomEnvironmentOff", InstanceFlags).GetValue(resources);
+                object ultraFeet = resourceType.GetProperty("FloorReflectionTexture", InstanceFlags).GetValue(resources);
+                if (ultraOn == null || ultraOff == null || ultraFeet == null)
+                    throw new Exception("Pack Ultra load must provide room cubemaps and the feet texture.");
+                if (((Cubemap)ultraOn).width != 2048 || ((Cubemap)ultraOff).width != 2048)
+                    throw new Exception("Ultra room cubemaps must reuse the 2048 High assets, got " + ((Cubemap)ultraOn).width + "/" + ((Cubemap)ultraOff).width);
+                Texture2D ultraFeet2D = (Texture2D)ultraFeet;
+                if (ultraFeet2D.width != 4096 || ultraFeet2D.height != 4096)
+                    throw new Exception("Ultra feet texture must reuse the 4096 High asset, got " + ultraFeet2D.width + "x" + ultraFeet2D.height);
+                roomType.GetMethod("ApplyEnvironment", Flags).Invoke(null, new object[] { ultraOn, ultraOff, null });
+                if (Shader.IsKeywordEnabled(DisabledKeyword) || !Shader.IsKeywordEnabled(RoomKeyword))
+                    throw new Exception("Bound Ultra room must disable FERROFLUID_NO_REFLECTIONS and enable the room keyword.");
+                actual = Sample("pack-bound-ultra-room", material);
+                if (actual.maxColorComponent <= 0f)
+                    throw new Exception("Bound Ultra room produced black radiance.");
+                Debug.Log("Ultra load PASS: room 2048/2048, feet " + ultraFeet2D.width + "x" + ultraFeet2D.height);
+
                 // A pending SDK High load superseded by None must not retain the pack bundle or textures.
                 resourceType.GetMethod("ReleaseReflectionAssets", Flags).Invoke(null, null);
                 HashSet<int> baselineBundles = GetBundleIds();

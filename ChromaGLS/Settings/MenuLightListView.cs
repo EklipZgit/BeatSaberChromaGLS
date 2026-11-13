@@ -17,7 +17,7 @@ namespace ChromaGLS.Settings
         private const string ListResourceName = "ChromaGLS.Settings.menu-lights.bsml";
         private const string RowResourceName = "ChromaGLS.Settings.menu-light-row.bsml";
 
-        private static readonly IList<object> ReflectionQualityOptions = new List<object> { ReflectionQuality.None, ReflectionQuality.Low, ReflectionQuality.High };
+        private static readonly IList<object> ReflectionQualityOptions = new List<object> { ReflectionQuality.None, ReflectionQuality.Low, ReflectionQuality.High, ReflectionQuality.Ultra };
 
         private readonly Config _config;
         private readonly ParabolicFloorLight _light;
@@ -37,6 +37,12 @@ namespace ChromaGLS.Settings
         [UIComponent("add-light")]
         private Button? _addButton;
 
+        [UIComponent("default-floor-light")]
+        private Button? _defaultButton;
+
+        [UIComponent("default-raised-light")]
+        private Button? _raisedDefaultButton;
+
         [UIComponent("reflection-quality-dropdown")]
         private BeatSaberMarkupLanguage.Components.Settings.DropDownListSetting? _qualityDropdown;
 
@@ -52,6 +58,8 @@ namespace ChromaGLS.Settings
             _store = store;
             _openEditor = openEditor;
             _packUI = packUI;
+            NeedsDefaultFloor = !_store.HasPreset(MenuLightType.Floor);
+            NeedsDefaultRaisedParabola = !_store.HasPreset(MenuLightType.Parabola);
             if (_packUI != null)
                 _packUI.QualityChanged += HandleQualityChanged;
         }
@@ -79,6 +87,10 @@ namespace ChromaGLS.Settings
         internal bool IsOpen { get; private set; }
 
         internal bool CanAdd => _store.Lights.Count < MenuLightStore.MaximumLights;
+
+        internal bool NeedsDefaultFloor { get; private set; }
+
+        internal bool NeedsDefaultRaisedParabola { get; private set; }
 
         private void HandleQualityChanged(ReflectionQuality quality) => RefreshQuality();
 
@@ -122,8 +134,43 @@ namespace ChromaGLS.Settings
                 _modalObject.GetComponent<ModalView>().Hide(false);
         }
 
+        [UIAction("light-default")]
+        [UsedImplicitly]
+        private void RestoreDefault() => RestoreDefaultPreset(MenuLightType.Floor);
+
+        [UIAction("light-default-raised")]
+        [UsedImplicitly]
+        private void RestoreDefaultRaised() => RestoreDefaultPreset(MenuLightType.Parabola);
+
+        private void RestoreDefaultPreset(MenuLightType preset)
+        {
+            if (_store.RestoreDefaultPreset(preset, null))
+            {
+                _light.Synchronize(_store.Lights);
+                Rebuild();
+            }
+        }
+
+        private void RefreshDefaultButtons()
+        {
+            NeedsDefaultFloor = !_store.HasPreset(MenuLightType.Floor);
+            NeedsDefaultRaisedParabola = !_store.HasPreset(MenuLightType.Parabola);
+            if (_defaultButton != null)
+            {
+                _defaultButton.gameObject.SetActive(NeedsDefaultFloor);
+                _defaultButton.interactable = CanAdd;
+            }
+
+            if (_raisedDefaultButton != null)
+            {
+                _raisedDefaultButton.gameObject.SetActive(NeedsDefaultRaisedParabola);
+                _raisedDefaultButton.interactable = CanAdd;
+            }
+        }
+
         internal void Rebuild()
         {
+            RefreshDefaultButtons();
             if (_rowContainer == null)
                 return;
 
@@ -159,6 +206,7 @@ namespace ChromaGLS.Settings
 #else
                 BSMLParser.Instance.Parse(rowMarkup, _rowContainer, row);
 #endif
+                row.RefreshControls();
                 _rowHosts.Add(row);
                 count++;
             }
@@ -170,6 +218,8 @@ namespace ChromaGLS.Settings
         internal void CloseForGameplay()
         {
             Hide();
+            _defaultButton = null;
+            _raisedDefaultButton = null;
             if (_root != null)
                 UnityEngine.Object.Destroy(_root);
 

@@ -10,7 +10,9 @@ namespace ChromaGLS.Settings
 
         internal static readonly ParabolicFloorLightSettings Default = new(0.43f, 0f, 0.86f, 2.47f, 3.2f, 0f, 0f, 0f, 1f, 0.96f, 1.25f, 1.3f, 0.04f, 4f);
 
-        internal static readonly ParabolicFloorLightSettings FloorDefault = new(0.11f, 10f, 0f, 0f, 3.2f, 0f, 0f, 0f, 1.2f, 0.96f, 4.69f, 9.33f, 0.10f, 4f);
+        internal static readonly ParabolicFloorLightSettings FloorDefault = new(0.43f, 0f, 1f, 2.5f, 3.2f, 0f, 0f, 0f, 1f, 0.6f, 1.42f, 1.8f, 0.20f, 2f);
+
+        internal static readonly ParabolicFloorLightSettings RaisedParabolaDefault = new(0.4f, 2.4f, 0f, 0f, 3.2f, 0f, 0f, 0f, 1.05f, 0.96f, 1.25f, 1.3f, 0.04f, 4f);
 
         [JsonProperty]
         internal readonly float Brightness;
@@ -191,6 +193,31 @@ namespace ChromaGLS.Settings
                 ? clamped * 0.5f
                 : 0.5f + (0.5f * Mathf.Sqrt((clamped - 1f) / 9f));
         }
+
+        internal static float EvaluateColorIntensity(float slider)
+        {
+            float clamped = Mathf.Clamp01(slider);
+            return clamped <= 0.5f
+                ? 2f * clamped
+                : 1f + (19f * ((2f * clamped) - 1f) * ((2f * clamped) - 1f));
+        }
+
+        internal static float EvaluateColorIntensitySlider(float intensity)
+        {
+            float clamped = Mathf.Clamp(intensity, 0f, 20f);
+            return clamped <= 1f
+                ? clamped * 0.5f
+                : 0.5f + (0.5f * Mathf.Sqrt((clamped - 1f) / 19f));
+        }
+
+        internal static float EvaluateHeight(float slider)
+        {
+            float clamped = Mathf.Clamp01(slider);
+            return 7f * clamped * clamped * clamped;
+        }
+
+        internal static float EvaluateHeightSlider(float height)
+            => Mathf.Pow(Mathf.Clamp(height, 0f, 7f) / 7f, 1f / 3f);
 
         internal static float EvaluateWidthScale(float slider)
         {

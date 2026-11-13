@@ -228,10 +228,27 @@ namespace ChromaGLS.Settings
             }
 
             controller = GetSelectedController(_vrPointer);
+            return TryGetPointerState(controller, out triggerValue, out hovering);
+        }
+
+        // Same arbitration raycast as the selected hand, driven by an explicit controller so the
+        // non-selected hand can acquire on its own trigger crossing.
+        internal bool TryGetPointerState(
+            VRController controller,
+            out float triggerValue,
+            out RaycastResult hovering)
+        {
+            if (!_hasControllers || !_vrPointer!.isActiveAndEnabled || !_eventSystem!.isActiveAndEnabled || !controller.active)
+            {
+                triggerValue = 0f;
+                hovering = default;
+                return false;
+            }
+
             triggerValue = controller.triggerValue;
 
-            // pointingOver can describe the previous EventSystem.Update ray from the old hand's aim,
-            // so grab arbitration raycasts itself at the currently selected pointer's pose.
+            // pointingOver can describe the previous EventSystem.Update ray from a different aim,
+            // so grab arbitration raycasts itself at the passed controller's current pose.
             if (_hoverEventData == null || _raycastScratch == null)
             {
                 hovering = default;

@@ -43,7 +43,7 @@ namespace ChromaGLS.Settings
         private static readonly string[] SurfaceDeclaredTextureSnapshotProperties =
         {
             "_EnvironmentTex", "_ThinFilmTex", "_HeightMapTex", "_RestPositionTex",
-            "_DensityPressureTex", "_SpringStateTex", "_SurfaceNormalTex",
+            "_DensityPressureTex", "_SpringStateTex", "_SurfaceNormalTex", "_SurfacePositionTex",
         };
 
         // Property id -> shader uniform name for every uniform this class applies through an
@@ -59,6 +59,7 @@ namespace ChromaGLS.Settings
             [Shader.PropertyToID("_CoarseCandidateSize")] = "_CoarseCandidateSize",
             [Shader.PropertyToID("_SpringStateTex")] = "_SpringStateTex",
             [Shader.PropertyToID("_SurfaceNormalTex")] = "_SurfaceNormalTex",
+            [Shader.PropertyToID("_SurfacePositionTex")] = "_SurfacePositionTex",
             [Shader.PropertyToID("_SurfaceNormalLogicalSize")] = "_SurfaceNormalLogicalSize",
             [Shader.PropertyToID("_SpikeSpringStrength")] = "_SpikeSpringStrength",
             [Shader.PropertyToID("_SpikeSpringDamping")] = "_SpikeSpringDamping",
@@ -159,6 +160,7 @@ namespace ChromaGLS.Settings
             ("_siteDeformation", "_SiteDeformationTex", "RGBA per particle: xyz=world-space spike direction (SpikeDeformation output), w=apex sharpening"),
             ("_siteBulge", "_SiteBulgeTex", "RGBA per particle: w=density bulge height in world units (alpha only)"),
             ("_surfaceNormalCache", "_SurfaceNormalTex", "RGBA physical 516x516 (512 logical + 2 texel gutter): rgb=world-space continuous surface normal, a=spike film alpha"),
+            ("_surfacePositionCache", "_SurfacePositionTex", "RGBAF physical 516x516 (512 logical + 2 texel gutter): rgb=world-space field position used for UV correspondence"),
         };
 
         private readonly Dictionary<string, SnapshotUniformValue> _simulationUniforms = new();
@@ -396,6 +398,8 @@ namespace ChromaGLS.Settings
                 return "_siteBulge";
             if (ReferenceEquals(texture, _surfaceNormalCache))
                 return "_surfaceNormalCache";
+            if (ReferenceEquals(texture, _surfacePositionCache))
+                return "_surfacePositionCache";
             return JValue.CreateNull();
         }
 
@@ -420,6 +424,7 @@ namespace ChromaGLS.Settings
                 "_siteDeformation" => _siteDeformation,
                 "_siteBulge" => _siteBulge,
                 "_surfaceNormalCache" => _surfaceNormalCache,
+                "_surfacePositionCache" => _surfacePositionCache,
                 _ => null,
             };
         }

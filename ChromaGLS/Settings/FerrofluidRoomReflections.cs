@@ -2,27 +2,107 @@ using System;
 using System.Collections;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Zenject;
 
 namespace ChromaGLS.Settings
 {
+    // Owns the whole menu-resource lifecycle: every native consumer releases before the
+    // shared core bundle unloads, and menu return recreates them in dependency order.
     internal sealed class FerrofluidReflectionLifecycle : IInitializable, IDisposable
     {
         private readonly GameScenesManager _sceneManager;
+        private readonly ParabolicFloorLight _light;
+        private bool _menuSuspended;
+        private Coroutine? _resume;
 
-        public FerrofluidReflectionLifecycle(GameScenesManager sceneManager)
+        public FerrofluidReflectionLifecycle(GameScenesManager sceneManager, ParabolicFloorLight light)
         {
             _sceneManager = sceneManager;
+            _light = light;
         }
 
         public void Initialize()
         {
-            FerrofluidRoomReflections.BeginMenuSession(_sceneManager);
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+            SceneManager.activeSceneChanged += HandleActiveSceneChanged;
+
+            // The owner may not be initialized yet; flag the session suspended first so a late
+            // owner Initialize cannot create resources before the delayed resume completes.
+            SuspendMenu();
+            ScheduleResume();
         }
 
         public void Dispose()
         {
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+            SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
+            SuspendMenu();
+        }
+
+        private void HandleSceneLoaded(Scene scene, LoadSceneMode _)
+        {
+            if (scene.name == "GameCore")
+                SuspendMenu();
+            else if (scene.name == "MainMenu")
+                ScheduleResume();
+        }
+
+        private void HandleActiveSceneChanged(Scene previous, Scene next)
+        {
+            if (next.name == "GameCore")
+                SuspendMenu();
+            else if (next.name == "MainMenu")
+                ScheduleResume();
+        }
+
+        private void SuspendMenu()
+        {
+            if (_resume != null)
+            {
+                _sceneManager.StopCoroutine(_resume);
+                _resume = null;
+            }
+
+            if (_menuSuspended)
+                return;
+
+            _menuSuspended = true;
+            _light.SetMenuActive(false);
+            ChromaGlsRequirementEffect.SetMenuActive(false);
+            FerrofluidEnvironmentObjects.EndMenuSession();
             FerrofluidRoomReflections.EndMenuSession();
+            FerrofluidGpuResources.EndMenuSession();
+        }
+
+        private void ScheduleResume()
+        {
+            if (!_menuSuspended || _resume != null)
+                return;
+            _resume = _sceneManager.StartCoroutine(ResumeWhenReady());
+        }
+
+        private IEnumerator ResumeWhenReady()
+        {
+            // Scene activation fires before the new scene's objects are enabled, so the
+            // rebuild must wait for the GameScenesManager transition to actually finish.
+            yield return null;
+            while (_sceneManager.isInTransition)
+                yield return null;
+
+            _resume = null;
+            if (_menuSuspended)
+                ResumeMenu();
+        }
+
+        private void ResumeMenu()
+        {
+            _menuSuspended = false;
+            FerrofluidGpuResources.BeginMenuSession();
+            FerrofluidRoomReflections.BeginMenuSession(_sceneManager);
+            FerrofluidEnvironmentObjects.BeginMenuSession();
+            ChromaGlsRequirementEffect.SetMenuActive(true);
+            _light.SetMenuActive(true);
         }
     }
 

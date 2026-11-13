@@ -186,7 +186,7 @@ internal sealed class FerrofluidTweakModalTests
         cancel.Invoke(session, null);
         Assert.That((bool)configType.GetProperty("FerrofluidFloorAssistanceEnabled")!.GetValue(live)!, Is.True);
         Assert.That((float)configType.GetProperty("FerrofluidCubeFloorFriction")!.GetValue(live)!, Is.EqualTo(0.25f));
-        Assert.That((float)configType.GetProperty("FerrofluidCubeCornerFriction")!.GetValue(live)!, Is.EqualTo(0.01f));
+        Assert.That((float)configType.GetProperty("FerrofluidCubeCornerFriction")!.GetValue(live)!, Is.EqualTo(0.0125f));
         Assert.That((float)configType.GetProperty("FerrofluidCubeFaceLandingStrength")!.GetValue(live)!, Is.EqualTo(0.55f));
         Assert.That((float)configType.GetProperty("FerrofluidCubeFaceDampingStrength")!.GetValue(live)!, Is.EqualTo(1.2f), "cancel restores defaults");
         Assert.That((float)configType.GetProperty("FerrofluidCubeFaceDampingExponent")!.GetValue(live)!, Is.EqualTo(2f));
@@ -216,7 +216,7 @@ internal sealed class FerrofluidTweakModalTests
         Invoke(session, "Reset");
         Assert.That((bool)configType.GetProperty("FerrofluidFloorAssistanceEnabled")!.GetValue(live)!, Is.True);
         Assert.That((float)configType.GetProperty("FerrofluidCubeFloorFriction")!.GetValue(live)!, Is.EqualTo(0.25f));
-        Assert.That((float)configType.GetProperty("FerrofluidCubeCornerFriction")!.GetValue(live)!, Is.EqualTo(0.01f));
+        Assert.That((float)configType.GetProperty("FerrofluidCubeCornerFriction")!.GetValue(live)!, Is.EqualTo(0.0125f));
         Assert.That((float)configType.GetProperty("FerrofluidCubeFaceLandingStrength")!.GetValue(live)!, Is.EqualTo(0.55f));
         Assert.That((float)configType.GetProperty("FerrofluidCubeFaceDampingStrength")!.GetValue(live)!, Is.EqualTo(1.2f));
         Assert.That((float)configType.GetProperty("FerrofluidCubeFaceDampingExponent")!.GetValue(live)!, Is.EqualTo(2f));

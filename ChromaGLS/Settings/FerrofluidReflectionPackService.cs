@@ -129,6 +129,9 @@ namespace ChromaGLS.Settings
 
         internal bool CanDownload => _installer?.CanDownload == true;
 
+        /// <summary>Actionable download states only; Checking stays hidden until verification resolves and Unavailable offers nothing.</summary>
+        internal bool NeedsDownload => State is PackState.Missing or PackState.Downloading or PackState.Failed;
+
         internal int Progress => _progress;
 
         internal string? LastError { get; private set; }

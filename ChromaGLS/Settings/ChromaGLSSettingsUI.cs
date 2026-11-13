@@ -32,6 +32,12 @@ namespace ChromaGLS.Settings
         [UIComponent("menu-floor-light-tweak")]
         private UnityEngine.UI.Button _menuFloorLightTweak = null!;
 
+        [UIComponent("chroma-menu-settings")]
+        private HMUI.ScrollView _menuSettingsScrollView = null!;
+
+        [UIObject("reflection-maps-button")]
+        private GameObject? _reflectionMapsButton;
+
         [UsedImplicitly]
 #if !V1_29_1
         private ChromaGLSSettingsUI(
@@ -64,6 +70,7 @@ namespace ChromaGLS.Settings
 #else
             _gameplaySetup.AddTab("ChromaGLS", "ChromaGLS.Settings.modifiers-minimal.bsml", this);
 #endif
+            _packUI.StatusChanged += RefreshReflectionMapsButton;
             SceneManager.sceneLoaded += HandleSceneLoaded;
             SceneManager.activeSceneChanged += HandleActiveSceneChanged;
         }
@@ -151,9 +158,16 @@ namespace ChromaGLS.Settings
 
         private void HandleSceneLoaded(Scene scene, LoadSceneMode _)
         {
+            if (scene.name == "MainMenu")
+            {
+                _packUI.SetMenuActive(true);
+                return;
+            }
+
             if (scene.name != "GameCore")
                 return;
 
+            _packUI.SetMenuActive(false);
             _parabolaUI.CloseForGameplay();
 #if FERROFLUID_TWEAKS
             _ferroUI.CloseForGameplay();
@@ -167,6 +181,7 @@ namespace ChromaGLS.Settings
 
         public void Dispose()
         {
+            _packUI.StatusChanged -= RefreshReflectionMapsButton;
             SceneManager.sceneLoaded -= HandleSceneLoaded;
             SceneManager.activeSceneChanged -= HandleActiveSceneChanged;
 #if FERROFLUID_TWEAKS
@@ -181,6 +196,12 @@ namespace ChromaGLS.Settings
         [UIAction("#post-parse")]
         private void HandlePostParse()
         {
+            // The cloned settings scroll view inherits EULA's vertical viewport padding,
+            // which otherwise clips content at the top and bottom of the Mods tab.
+            ConfigureMenuViewport(_menuSettingsScrollView.viewportTransform);
+            _menuSettingsScrollView.ScrollTo(0f, false);
+            RefreshReflectionMapsButton();
+
             ParabolicFloorLightAnchorLifecycle parabolaLifecycle = _ferrofluidPreviewAnchor.gameObject.AddComponent<ParabolicFloorLightAnchorLifecycle>();
             parabolaLifecycle.Initialize(_parabolaUI);
             ParabolicFloorLightSettingsUI.PositionTweakButtonLeftOfSwitch(
@@ -190,6 +211,18 @@ namespace ChromaGLS.Settings
             FerrofluidSettingsAnchorLifecycle lifecycle = _ferrofluidPreviewAnchor.gameObject.AddComponent<FerrofluidSettingsAnchorLifecycle>();
             lifecycle.Initialize(_ferroUI);
 #endif
+        }
+
+        private void RefreshReflectionMapsButton()
+        {
+            if (_reflectionMapsButton != null)
+                _reflectionMapsButton.SetActive(_packUI.NeedsDownload);
+        }
+
+        internal static void ConfigureMenuViewport(RectTransform viewport)
+        {
+            viewport.offsetMin = new Vector2(viewport.offsetMin.x, 0f);
+            viewport.offsetMax = new Vector2(viewport.offsetMax.x, 0f);
         }
 
         [UsedImplicitly]

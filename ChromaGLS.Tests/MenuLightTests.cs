@@ -51,6 +51,9 @@ public class MenuLightTests
     private static object Prop(object instance, string name)
         => instance.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(instance)!;
 
+    private static void SetProp(object instance, string name, object value)
+        => instance.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.SetValue(instance, value);
+
     private static object Invoke(object instance, string name, params object[] arguments)
         => instance.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(instance, arguments)!;
 
@@ -63,11 +66,14 @@ public class MenuLightTests
             object def = CreateDefault(store, type);
             Assert.That((string)Prop(def, "Id")!, Is.Not.Empty, $"{type} must generate a stable id");
             Assert.That((bool)Prop(def, "Enabled")!, Is.True);
-            Assert.That((float)Prop(def, "Height")!, Is.EqualTo(0.006f).Within(0.0001f));
-            Assert.That((float)Prop(def, "Depth")!, Is.EqualTo(0.02f).Within(0.0001f));
+            float height = type == "Parabola" ? 4.3f : 0.006f;
+            float depth = type == "Parabola" ? 0.2f : 0.02f;
+            float fadeStart = type == "Parabola" ? 0.15f : 0.45f;
+            Assert.That((float)Prop(def, "Height")!, Is.EqualTo(height).Within(0.0001f));
+            Assert.That((float)Prop(def, "Depth")!, Is.EqualTo(depth).Within(0.0001f));
             Assert.That((float)Prop(def, "Size")!, Is.EqualTo(1f).Within(0.0001f));
-            Assert.That((float)Prop(def, "QuaternionW")!, Is.EqualTo(1f).Within(0.0001f));
-            Assert.That((float)Prop(def, "FadeStart")!, Is.EqualTo(0.45f).Within(0.0001f));
+            Assert.That((float)Prop(def, "QuaternionW")!, Is.EqualTo(type == "Parabola" ? Mathf.Cos(10f * Mathf.Deg2Rad) : 1f).Within(0.0001f));
+            Assert.That((float)Prop(def, "FadeStart")!, Is.EqualTo(fadeStart).Within(0.0001f));
         }
     }
 
@@ -108,7 +114,7 @@ public class MenuLightTests
         config.GetType().GetProperty("ParabolicFloorLightRotation")!.SetValue(config, 37f);
         object store = NewStore(config);
         IList lights = (IList)Prop(store, "Lights")!;
-        Assert.That(lights.Count, Is.EqualTo(1), "empty MenuLightsJson must migrate the legacy parabola");
+        Assert.That(lights.Count, Is.EqualTo(2), "empty MenuLightsJson must migrate the legacy parabola and seed the raised parabola");
         object migrated = lights[0]!;
         Assert.That((float)Prop(migrated, "PositionX")!, Is.EqualTo(0.7f).Within(0.001f));
         Assert.That((float)Prop(migrated, "PositionZ")!, Is.EqualTo(-0.4f).Within(0.001f));
@@ -144,6 +150,11 @@ public class MenuLightTests
     public void RotateAxisAppliesLocalDeltaAndGetRotationNormalizes()
     {
         object def = CreateDefault(NewStore(), "Parabola");
+        SetProp(def, "RotationX", 0f);
+        SetProp(def, "QuaternionX", 0f);
+        SetProp(def, "QuaternionY", 0f);
+        SetProp(def, "QuaternionZ", 0f);
+        SetProp(def, "QuaternionW", 1f);
         Invoke(def, "RotateAxis", 1, 90f);
         Quaternion rotation = (Quaternion)Invoke(def, "GetRotation");
         Assert.That(Mathf.Abs(Quaternion.Angle(rotation, Quaternion.Euler(0f, 90f, 0f))), Is.LessThan(1f));

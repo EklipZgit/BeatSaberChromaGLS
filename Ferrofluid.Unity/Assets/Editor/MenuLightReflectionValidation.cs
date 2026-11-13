@@ -29,7 +29,7 @@ namespace ChromaGLS.FerrofluidBundle
             Debug.Log("[MenuLightReflectionValidation] PASS: production projection and saved array cache.");
         }
 
-        private static void ValidateProjection()
+        private static void ValidateProjection(Shader overrideShader = null)
         {
             RenderTexture array = new(16, 16, 0, RenderTextureFormat.RGB111110Float, RenderTextureReadWrite.Linear)
             {
@@ -39,7 +39,7 @@ namespace ChromaGLS.FerrofluidBundle
                 wrapMode = TextureWrapMode.Clamp,
             };
             Cubemap blackRoom = new(4, TextureFormat.RGBAHalf, false);
-            Material material = new(AssetDatabase.LoadAssetAtPath<Shader>("Assets/FerrofluidSurface.shader"));
+            Material material = new(overrideShader != null ? overrideShader : AssetDatabase.LoadAssetAtPath<Shader>("Assets/FerrofluidSurface.shader"));
             try
             {
                 Check(array.Create(), "The marker texture array must be supported.");
@@ -115,6 +115,52 @@ namespace ChromaGLS.FerrofluidBundle
                 Publish(0);
                 Sample("empty collection", new Vector3(0f, 1f, 0f), Vector3.down, Vector3.up, Color.black);
 
+                // Directional floor response: flags.y is the side/top gain, flags.z is the
+                // parabola slope scale 2*BaseCurveScale/WidthScale^2. Red slice red(2,0,0).
+                float sideGain = 1.44f * 1.3f / .64f - 1f;
+                float slopeScale = 2f * .75f / (3.2f * 3.2f);
+                flags[0] = new Vector4(1f, sideGain, slopeScale, 0f);
+                flags[1].x = 0f;
+                matrices[0] = Matrix4x4.identity;
+                bounds[0] = new Vector4(-2f, -2f, .25f, .25f);
+                Publish(1);
+                float r75 = Mathf.Sqrt(.75f);
+                float r5 = Mathf.Sqrt(.5f);
+                Color lit = new(2f, 0f, 0f);
+                Color boosted = new(2f * (1f + sideGain * .75f), 0f, 0f);
+                Color mid = new(2f * (1f + sideGain * .5f), 0f, 0f);
+                SampleRay("floor overhead", Vector3.zero, Vector3.down, lit);
+                SampleRay("floor apex front", Vector3.zero, new Vector3(0f, -.5f, r75), boosted);
+                SampleRay("floor apex back", Vector3.zero, new Vector3(0f, -.5f, -r75), boosted);
+                SampleRay("floor apex 45", Vector3.zero, new Vector3(0f, -r5, r5), mid);
+                SampleRay("floor apex tangent", Vector3.zero, new Vector3(r75, -.5f, 0f), lit);
+                float sx = slopeScale; // 2a at localHit.x=1
+                float nz = Mathf.Sqrt(1f + sx * sx);
+                Vector3 offApexHit = new(1f, 0f, .75f / (3.2f * 3.2f));
+                SampleRay("floor off-apex side normal", offApexHit, new Vector3(r75 * sx / nz, -.5f, -r75 / nz), boosted);
+                SampleRay("floor off-apex tangent", offApexHit, new Vector3(r75 / nz, -.5f, r75 * sx / nz), lit);
+
+                // Whole-pose rotation+translation must preserve the local response.
+                Quaternion yaw60 = Quaternion.AngleAxis(60f, Vector3.up);
+                Matrix4x4 pose = Matrix4x4.TRS(new Vector3(1f, .02f, -.35f), yaw60, Vector3.one);
+                matrices[0] = pose.inverse;
+                Publish(1);
+                Vector3 worldHit = pose.MultiplyPoint3x4(Vector3.zero);
+                Vector3 worldRay = pose.MultiplyVector(new Vector3(0f, -.5f, r75));
+                SampleRay("floor rotated apex front", worldHit, worldRay, boosted);
+                matrices[0] = Matrix4x4.identity;
+                Publish(1);
+                SampleRay("floor outside bounds", new Vector3(0f, 0f, 4f), Vector3.down, Color.black);
+                SampleRay("floor parallel rejected", Vector3.zero, Vector3.forward, Color.black);
+                flags[0] = new Vector4(1f, 0f, 0f, 0f);
+                Publish(1);
+                SampleRay("non-floor unboosted", Vector3.zero, new Vector3(0f, -.5f, r75), lit);
+                flags[0] = new Vector4(0f, sideGain, slopeScale, 0f);
+                Publish(1);
+                SampleRay("disabled floor black", Vector3.zero, new Vector3(0f, -.5f, r75), Color.black);
+                flags[0] = new Vector4(1f, sideGain, slopeScale, 0f);
+                Publish(0);
+
                 // A missing optional pack enables FERROFLUID_NO_REFLECTIONS; procedural floor
                 // lights must still contribute because they are independent of the room pack.
                 flags[0].x = 1f;
@@ -125,9 +171,23 @@ namespace ChromaGLS.FerrofluidBundle
                 Shader.DisableKeyword("FERROFLUID_ROOM_REFLECTIONS");
                 material.DisableKeyword("FERROFLUID_ROOM_REFLECTIONS");
                 Sample("default variant keeps procedural lights", new Vector3(0f, 1f, 0f), Vector3.down, Vector3.up, new Color(2f, 3f, 0f));
+                flags[1].x = 0f;
+                Publish(1);
+                SampleRay("default floor apex front", Vector3.zero, new Vector3(0f, -.5f, r75), boosted);
+                SampleRay("default floor apex back", Vector3.zero, new Vector3(0f, -.5f, -r75), boosted);
+                SampleRay("default floor overhead", Vector3.zero, Vector3.down, lit);
+                flags[1].x = 1f;
+                Publish(2);
                 Shader.EnableKeyword("FERROFLUID_NO_REFLECTIONS");
                 material.EnableKeyword("FERROFLUID_NO_REFLECTIONS");
                 Sample("missing room keeps procedural lights", new Vector3(0f, 1f, 0f), Vector3.down, Vector3.up, new Color(2f, 3f, 0f));
+                flags[1].x = 0f;
+                Publish(1);
+                SampleRay("no-room floor apex front", Vector3.zero, new Vector3(0f, -.5f, r75), boosted);
+                SampleRay("no-room floor apex back", Vector3.zero, new Vector3(0f, -.5f, -r75), boosted);
+                SampleRay("no-room floor overhead", Vector3.zero, Vector3.down, lit);
+                flags[1].x = 1f;
+                Publish(2);
                 Publish(0);
                 Sample("missing room with empty collection", new Vector3(0f, 1f, 0f), Vector3.down, Vector3.up, Color.black);
                 Shader.DisableKeyword("FERROFLUID_NO_REFLECTIONS");
@@ -147,6 +207,14 @@ namespace ChromaGLS.FerrofluidBundle
                 {
                     Shader.SetGlobalVector("_FerrofluidReflectionStrengths", strengths);
                     material.SetVector("_FerrofluidReflectionStrengths", strengths);
+                }
+
+                void SampleRay(string name, Vector3 worldHit, Vector3 worldRay, Color expected)
+                {
+                    Vector3 normal = Vector3.up;
+                    Vector3 origin = worldHit - worldRay;
+                    Vector3 view = -Vector3.Reflect(worldRay, normal);
+                    Sample(name, origin, view, normal, expected);
                 }
 
                 void Sample(string name, Vector3 origin, Vector3 view, Vector3 normal, Color expected)
@@ -182,6 +250,8 @@ namespace ChromaGLS.FerrofluidBundle
         private static void ValidateCache(bool includeOwner = true)
         {
             object config = FerrofluidValidationRuntime.CreateConfig();
+            Set(config, "MenuLightsJson", "[]");
+            Set(config, "MenuLightDefaultsVersion", 1);
             Assembly plugin = config.GetType().Assembly;
             Type definitionType = plugin.GetType("ChromaGLS.Settings.MenuLightDefinition", true);
             Type meshesType = plugin.GetType("ChromaGLS.Settings.MenuLightMeshes", true);
@@ -260,6 +330,7 @@ namespace ChromaGLS.FerrofluidBundle
                 Sync();
                 flags = Shader.GetGlobalVectorArray("_FerrofluidMenuLightFlags");
                 Check(flags[0].x == 0f && flags[1].x == 1f && calls == 2, "Per-light and master visibility must not bake.");
+                Check(flags[0].y == 0f && flags[0].z == 0f && flags[1].y == 0f && flags[1].z == 0f, "Non-floor lights must publish zero directional metadata.");
 
                 object appearance = Get(green, "Appearance");
                 Set(green, "Appearance", appearance.GetType().GetMethod("WithGreen", Instance).Invoke(appearance, new object[] { 5f }));
@@ -280,6 +351,23 @@ namespace ChromaGLS.FerrofluidBundle
                 Check(Shader.GetGlobalFloat("_FerrofluidMenuLightCount") == 0f, "Removing the last light must clear collection count.");
                 Check(Shader.GetGlobalTexture("_FerrofluidMenuLightReflections") == null, "Removing the last light must release the array.");
                 Check(Shader.GetGlobalFloat("_FerrofluidParabolaReflectionEnabled") == 0f, "An empty collection must not resurrect legacy reflections.");
+
+                object floor = Definition("floor-light", "Floor", new Color(2f, 0f, 0f));
+                definitions.Add(floor);
+                meshes.Add("floor-light", BuildMeshes(floor));
+                Sync();
+                flags = Shader.GetGlobalVectorArray("_FerrofluidMenuLightFlags");
+                float topScale = Constant("MenuLightGeometry", "FloorTopRadianceScale");
+                float expectedGain = ((Constant("MenuLightGeometry", "FloorSideRadianceScale") * Constant("MenuLightGeometry", "FloorSideEmissionScale")) / topScale) - 1f;
+                object floorAppearance = Get(floor, "Appearance");
+                float width = (float)floorAppearance.GetType().GetField("WidthScale", Instance).GetValue(floorAppearance);
+                float expectedSlope = 2f * Constant("ParabolicFloorLightGeometry", "BaseCurveScale") / (width * width);
+                Check(Mathf.Abs(flags[0].y - expectedGain) < 0.0001f, $"Floor must publish side/top gain {expectedGain}.");
+                Check(Mathf.Abs(flags[0].z - expectedSlope) < 0.0001f, $"Floor must publish doubled curve slope {expectedSlope}.");
+                Check(flags[0].x == 1f && flags[0].w == 0f, "An enabled floor must keep the enable flag and a zero tail.");
+                definitions.Clear();
+                meshes.Clear();
+                Sync();
                 Check(cameraRenders == 0, "Baking and collection edits must render no scene cameras.");
                 Debug.Log($"[MenuLightReflectionValidation] cache: calls={calls} sceneCameras={cameraRenders} redPeak={redPeak:F6} greenPeak={greenPeak:F6}; retained base/mip3 identical.");
                 if (includeOwner)
@@ -325,7 +413,7 @@ namespace ChromaGLS.FerrofluidBundle
                         object renderer = renderers["owner-red"];
                         GameObject root = (GameObject)renderer.GetType().GetField("_root", Instance).GetValue(renderer);
                         Vector3 committedPosition = root.transform.position;
-                        Color committedColor = root.GetComponent<MeshRenderer>().sharedMaterial.color;
+                        Color committedColor = EmitterColor(root);
                         object working = savedRed.GetType().GetMethod("Clone", Instance).Invoke(savedRed, null);
                         Set(working, "Height", 1f);
                         Set(working, "PositionX", 0.5f);
@@ -334,7 +422,7 @@ namespace ChromaGLS.FerrofluidBundle
                         Set(working, "Appearance", color.GetType().GetMethod("WithBlue", Instance).Invoke(color, new object[] { 4f }));
                         ownerType.GetMethod("Preview", Instance).Invoke(owner, new[] { working });
                         Check(root.transform.position == new Vector3(0.5f, 1f, 0f), "An unsaved pose must update the visible renderer.");
-                        Color previewColor = root.GetComponent<MeshRenderer>().sharedMaterial.color;
+                        Color previewColor = EmitterColor(root);
                         Check(previewColor.b > previewColor.r, "Unsaved blue must reach the visible material.");
                         Check(calls == initialCalls && ReferenceEquals(committedArray, Current()), "Preview must not bake or replace saved reflection storage.");
                         SameMatrices(committedMatrices, Shader.GetGlobalMatrixArray("_FerrofluidMenuLightWorldToLocal"), 0, 2);
@@ -343,7 +431,7 @@ namespace ChromaGLS.FerrofluidBundle
                         Same(committedRed, ReadSlice(Current(), 0, 0), "Preview must not mutate saved red pixels.");
                         Same(committedGreen, ReadSlice(Current(), 1, 0), "Preview must not mutate saved green pixels.");
                         ownerType.GetMethod("Restore", Instance).Invoke(owner, new object[] { "owner-red" });
-                        Check(root.transform.position == committedPosition && root.GetComponent<MeshRenderer>().sharedMaterial.color == committedColor, "Cancel must restore the saved renderer.");
+                        Check(root.transform.position == committedPosition && EmitterColor(root) == committedColor, "Cancel must restore the saved renderer.");
                         Check(calls == initialCalls, "Cancel must not bake.");
 
                         ownerType.GetMethod("Preview", Instance).Invoke(owner, new[] { working });
@@ -368,6 +456,13 @@ namespace ChromaGLS.FerrofluidBundle
                         Debug.Log("[MenuLightReflectionValidation] owner: preview/cancel preserved saved pixels and metadata; save baked only red; green unchanged; remove-to-zero cleared.");
 
                         void OwnerField(string name, object value) => ownerType.GetField(name, Instance).SetValue(owner, value);
+
+                        Color EmitterColor(GameObject target)
+                        {
+                            // The optional coverage pass occupies slot zero; the emitter is always last.
+                            Material[] materials = target.GetComponent<MeshRenderer>().sharedMaterials;
+                            return materials[materials.Length - 1].color;
+                        }
 
                         void Commit() => ownerType.GetMethod("Synchronize", Instance).Invoke(owner, new[] { Get(store, "Lights") });
                     }
@@ -406,6 +501,8 @@ namespace ChromaGLS.FerrofluidBundle
                 }
 
                 void Sync() => cacheType.GetMethod("Synchronize", Instance).Invoke(cache, new object[] { definitions, meshes, true });
+
+                float Constant(string type, string name) => (float)plugin.GetType("ChromaGLS.Settings." + type, true).GetField(name, Static).GetValue(null);
 
                 RenderTexture Current() => (RenderTexture)Shader.GetGlobalTexture("_FerrofluidMenuLightReflections");
             }

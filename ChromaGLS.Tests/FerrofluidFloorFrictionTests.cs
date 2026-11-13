@@ -10,6 +10,85 @@ namespace ChromaGLS.Tests;
 internal sealed class FerrofluidFloorFrictionTests
 {
     [Test]
+    public void CubeImpactInverseInertiaScaleOnlyAppliesToFastSpin()
+    {
+        MethodInfo evaluate = GetPhysicsMethod("EvaluateCubeImpactInverseInertiaScale");
+        Assert.That(evaluate, Is.Not.Null, "External bumps need a fast-spin inverse-inertia scale.");
+        string configuration = Assembly.Load("ChromaGLS")
+            .GetCustomAttribute<AssemblyConfigurationAttribute>()!
+            .Configuration;
+        bool modern = new Version(configuration.Split('-')[1]) >= new Version(1, 40, 8);
+        float fastDiagonal = modern ? 0.125f : 0.5f;
+        float fastAxis = modern ? 0.125f : 1f;
+        Vector3 diagonal = new Vector3(1f, 1f, 1f).normalized * 10f;
+        Assert.That((float)evaluate!.Invoke(null, [diagonal])!, Is.EqualTo(fastDiagonal), "Fast diagonal spin gets the configured rotational resistance.");
+        Assert.That((float)evaluate.Invoke(null, [-diagonal])!, Is.EqualTo(fastDiagonal), "Sign does not matter for the spin bias.");
+        Assert.That((float)evaluate.Invoke(null, [new Vector3(10f, 0f, 0f)])!, Is.EqualTo(fastAxis), "Only the modern bias applies to axis-aligned spin.");
+        Assert.That((float)evaluate.Invoke(null, [diagonal.normalized * 0.5f])!, Is.EqualTo(1f), "Slow diagonal spin stays native.");
+        Assert.That((float)evaluate.Invoke(null, [Vector3.zero])!, Is.EqualTo(1f), "No spin stays native.");
+    }
+
+    [Test]
+    public void CubeFaceSettlingDampsTippingButPreservesFaceNormalTwist()
+    {
+        MethodInfo settling = GetPhysicsMethod("EvaluateCubeFaceSettlingAngularVelocity");
+        Assert.That(settling, Is.Not.Null, "Settling must damp tipping without braking twist about the landing face.");
+
+        Quaternion rotation = Quaternion.Euler(0f, 25f, 2f);
+        Vector3 normal = rotation * Vector3.up;
+        Vector3 tipping = rotation * Vector3.right * 2f;
+        Vector3 omega = (normal * 50f) + tipping;
+        Vector3 result = (Vector3)settling!.Invoke(null, [rotation, omega, 10f, 0.02f])!;
+        Assert.That(Vector3.Dot(result, normal), Is.EqualTo(50f).Within(0.0001f), "Twist about the landing face is preserved.");
+        Vector3 dampedTip = result - (normal * Vector3.Dot(result, normal));
+        Assert.That(dampedTip.magnitude, Is.EqualTo(2f * Mathf.Exp(-0.2f)).Within(0.0001f), "The tipping component decays at the settling rate.");
+        Assert.That(Vector3.Dot(dampedTip.normalized, tipping.normalized), Is.EqualTo(1f).Within(0.0001f), "The tipping direction is unchanged.");
+
+        Vector3 reversed = (Vector3)settling.Invoke(null, [rotation, -omega, 10f, 0.02f])!;
+        Assert.That(Vector3.Dot(reversed, normal), Is.EqualTo(-50f).Within(0.0001f), "Negative twist is preserved.");
+
+        Vector3 pureTwist = (Vector3)settling.Invoke(null, [rotation, normal * 60f, 100000f, 0.02f])!;
+        Assert.That(pureTwist.magnitude, Is.EqualTo(60f).Within(0.001f), "Pure face-normal spin is untouched even at an extreme rate.");
+
+        Quaternion tipped = Quaternion.Euler(0f, 0f, 5f);
+        Vector3 pureTip = Vector3.forward * 2f;
+        Vector3 oldWay = pureTip * Mathf.Exp(-10f * 0.02f);
+        Vector3 newWay = (Vector3)settling.Invoke(null, [tipped, pureTip, 10f, 0.02f])!;
+        Assert.That(newWay.x, Is.EqualTo(oldWay.x).Within(0.0001f));
+        Assert.That(newWay.y, Is.EqualTo(oldWay.y).Within(0.0001f));
+        Assert.That(newWay.z, Is.EqualTo(oldWay.z).Within(0.0001f), "Pure tipping still decays exactly like the old whole-vector exponential.");
+    }
+
+    [Test]
+    public void CubeSpeculativeContactIgnoresAngularGhostReachOnly()
+    {
+        MethodInfo shouldIgnore = GetPhysicsMethod("ShouldIgnoreCubeSpeculativeContact");
+        Assert.That(shouldIgnore, Is.Not.Null, "Spinning cubes must reject contacts beyond the linear closing budget.");
+
+        Assert.That((bool)shouldIgnore!.Invoke(null, [0.15f, 0f, 0.02f, 0.02f])!, Is.True, "Far contact with no closing speed is an angular ghost.");
+        Assert.That((bool)shouldIgnore.Invoke(null, [0.15f, 1f, 0.02f, 0.02f])!, Is.True, "1 m/s cannot close 0.15 m within one step.");
+        Assert.That((bool)shouldIgnore.Invoke(null, [-0.01f, 0f, 0.02f, 0.02f])!, Is.False, "A penetrating contact is never an angular ghost.");
+        Assert.That((bool)shouldIgnore.Invoke(null, [0.15f, 25f, 0.02f, 0.02f])!, Is.False, "A 25 m/s approach legitimately closes 0.15 m within one step.");
+        Assert.That((bool)shouldIgnore.Invoke(null, [0.15f, -10f, 0.02f, 0.02f])!, Is.True, "Receding bodies do not grow the reach budget.");
+        Assert.That((bool)shouldIgnore.Invoke(null, [0.04f, 1f, 0.02f, 0.02f])!, Is.False, "A contact exactly at the closing budget stays accepted.");
+    }
+
+    [Test]
+    public void CubeImpactMaxImpulseBoundsSpinKickButKeepsTranslationalBounce()
+    {
+        MethodInfo impulse = GetPhysicsMethod("EvaluateCubeImpactMaxImpulse");
+        Assert.That(impulse, Is.Not.Null, "Spin resistance needs a per-contact impulse cap that preserves real impacts.");
+
+        Assert.That((float)impulse!.Invoke(null, [1f, 0f, 0.468f, 1])!, Is.EqualTo(6f), "No closing speed leaves only the fixed kick budget.");
+        Assert.That((float)impulse.Invoke(null, [1f, 1f, 0.468f, 1])!, Is.EqualTo(7.468f), "Translational closing speed adds its (1+e) budget.");
+        Assert.That((float)impulse.Invoke(null, [1f, 25f, 0.468f, 1])!, Is.GreaterThanOrEqualTo(36.7f), "A real fast impact keeps a large impulse budget.");
+        float single = (float)impulse.Invoke(null, [1f, 1f, 0.468f, 1])!;
+        float quad = (float)impulse.Invoke(null, [1f, 1f, 0.468f, 4])!;
+        Assert.That(quad * 4f, Is.EqualTo(single).Within(0.0001f), "Splitting a pair across four contacts keeps the same total budget.");
+        Assert.That((float)impulse.Invoke(null, [2f, 0f, 0.468f, 1])!, Is.EqualTo(12f), "The kick budget scales with body mass.");
+    }
+
+    [Test]
     public void FloorSpinAngularDecelerationBrakesSignedSpinTowardZero()
     {
         MethodInfo accel = GetPhysicsMethod("EvaluateFloorSpinAngularAcceleration");
