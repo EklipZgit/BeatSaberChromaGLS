@@ -27,6 +27,11 @@ internal static class Program
         return new AutoRun().Execute(args);
     }
 
+    internal static void RegisterInternalCall(string name, Delegate callback)
+    {
+        mono_add_internal_call(name, Marshal.GetFunctionPointerForDelegate(callback));
+    }
+
     internal static void InitializeHost()
     {
         // GlsEasingTests patches SongCore's MonoMod-generated selection hook as part of the real plugin
@@ -37,15 +42,9 @@ internal static class Program
         try
         {
             // Beat Saber 1.44.1's Unity 6 module dispatches through the injected span overload, so both icall names need the deterministic test stub.
-            mono_add_internal_call(
-                "UnityEngine.Shader::PropertyToID",
-                Marshal.GetFunctionPointerForDelegate(PropertyToIDStub));
-            mono_add_internal_call(
-                "UnityEngine.Shader::PropertyToID_Injected",
-                Marshal.GetFunctionPointerForDelegate(PropertyToIDStub));
-            mono_add_internal_call(
-                "UnityEngine.Object::GetOffsetOfInstanceIDInCPlusPlusObject",
-                Marshal.GetFunctionPointerForDelegate(ObjectInstanceOffsetStub));
+            RegisterInternalCall("UnityEngine.Shader::PropertyToID", PropertyToIDStub);
+            RegisterInternalCall("UnityEngine.Shader::PropertyToID_Injected", PropertyToIDStub);
+            RegisterInternalCall("UnityEngine.Object::GetOffsetOfInstanceIDInCPlusPlusObject", ObjectInstanceOffsetStub);
         }
         catch (Exception error)
         {
