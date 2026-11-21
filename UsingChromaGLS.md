@@ -434,6 +434,14 @@ During that interval, HSV applies to both endpoint color tracks and their faded 
 - Incoming `easing`, `colorEasing`, `strobeColorEasing`, and `easingType` do not inherit from the predecessor. Author those on the Extend node when you want to ease into its inherited endpoint.
 - When a strobe transitions to a non-strobing event, both phases converge on the destination's normal RGBA instead of leaving a separate strobe color behind.
 
+## Translation and Rotation Axes
+
+A GLS light group can use an unwired translation or rotation axis by reusing an existing transform. Enable ChromaGLS and list **ChromaGLS** as a requirement or suggestion on the difficulty. For example, you can move Daft Punk's triangle walls on X and Y as well as Z. Choose the axis with the normal event box field `a` in V3 (`0` for X, `1` for Y, `2` for Z). The event boxes use standard fields.
+
+An unwired axis uses the source axis's mirroring and inherits its translation and distribution limits when the destination has no limits. If the source has no limits, ChromaGLS uses any configured range for that parameter. ChromaGLS prefers X, then Y, then Z when it has a choice of sources. Axes that already have their own transforms keep them. A group needs a translation transform to unlock translation and a rotation transform to unlock rotation.
+
+The additional axes are set up when the level loads. Add **ChromaGLS** as a difficulty requirement if the map relies on them.
+
 ## Compatibility
 
 ### Forward-Port Compatibility

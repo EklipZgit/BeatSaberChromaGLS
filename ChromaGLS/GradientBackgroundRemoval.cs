@@ -1,7 +1,4 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using ChromaGLS.Settings;
 using CustomJSONData;
 using CustomJSONData.CustomBeatmap;
@@ -71,25 +68,8 @@ namespace ChromaGLS
 #else
             CustomData? customData = sceneSetupData.beatmapLevel?.GetBeatmapCustomData(sceneSetupData.beatmapKey);
 #endif
-            if (customData == null)
-            {
-                return false;
-            }
-
-            var requirements =
-                customData.Get<List<object>>("_requirements")?.Cast<string>().ToArray()
-                ?? Array.Empty<string>();
-            if (requirements.Any(n => string.Equals(n, "Chroma", StringComparison.OrdinalIgnoreCase)))
-            {
-                return false;
-            }
-
-            var suggestions =
-                customData.Get<List<object>>("_suggestions")?.Cast<string>().ToArray()
-                ?? Array.Empty<string>();
-            return requirements
-                .Concat(suggestions)
-                .Any(n => string.Equals(n, "ChromaGLS", StringComparison.OrdinalIgnoreCase));
+            return !ChromaGlsDifficultyMetadata.ContainsCapability(customData, "_requirements", "Chroma")
+                && ChromaGlsDifficultyMetadata.OptsIntoChromaGls(customData, includeUnprefixedKeys: false);
         }
     }
 }
